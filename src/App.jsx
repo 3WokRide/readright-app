@@ -1,0 +1,32 @@
+import { Routes, Route, Navigate } from 'react-router-dom'
+import LoginPage          from './pages/LoginPage.jsx'
+import SessionScreen      from './pages/SessionScreen.jsx'
+import SessionResultsPage from './pages/SessionResultsPage.jsx'
+import DashboardPage      from './pages/DashboardPage.jsx'
+
+/**
+ * Route map (RR-003 skeleton):
+ *
+ *   /login      — UC-1.1  Learner authentication
+ *   /session    — UC-1.2 → UC-2.x → UC-3.x  GO1 quality checks + recording
+ *   /results    — UC-4.1  Session results display
+ *   /dashboard  — UC-4.3 + UC-4.4  Personal progress dashboard
+ *
+ * Auth guards (redirect unauthenticated → /login) are added in RR-010.
+ */
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/login"     element={<LoginPage />} />
+      <Route path="/session"   element={<SessionScreen />} />
+      <Route path="/results"   element={<SessionResultsPage />} />
+      <Route path="/dashboard" element={<DashboardPage />} />
+
+      {/* Default: redirect root to login */}
+      <Route path="/" element={<Navigate to="/login" replace />} />
+
+      {/* 404 fallback */}
+      <Route path="*" element={<Navigate to="/login" replace />} />
+    </Routes>
+  )
+}
