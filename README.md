@@ -72,11 +72,6 @@ src/
 | `/results` | SessionResultsPage | Stub |
 | `/dashboard` | DashboardPage | Stub |
 
-## Branch strategy
-
-- `main` — protected, PR required
-- `develop` — integration target for all feature branches
-
 ## Key constraints (read before implementing)
 
 - **No offline mode** — Service Worker is for PWA installation only
