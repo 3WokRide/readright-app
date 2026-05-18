@@ -15,8 +15,8 @@ Phil-IRI oral reading assessment PWA for Grade 4 Filipino learners.
 ### 1. Clone and install
 
 ```bash
-git clone <repo-url> readright
-cd readright
+git clone https://github.com/3WokRide/readright-app.git readright-app
+cd readright-app
 npm install
 ```
 
