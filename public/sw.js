@@ -13,8 +13,6 @@
  * Registration happens in src/main.jsx after the app mounts.
  */
 
-const CACHE_NAME = 'readright-install-v1'
-
 // install — no assets cached (offline not supported)
 self.addEventListener('install', (event) => {
   console.info('[SW] Installing — installation support only, no caching.')
@@ -27,8 +25,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim())
 })
 
-// fetch — pass all requests straight through to the network
-// Do NOT add any caching logic here per SRS scope constraints.
-self.addEventListener('fetch', (event) => {
-  event.respondWith(fetch(event.request))
-})
+// fetch — intentionally a no-op: all requests fall through to the network.
+// This handler exists solely to satisfy Chrome's PWA installability requirement
+// (NFR-C3). No caching anywhere, per SRS §2.1 / SDD §2.1. Do NOT add caching.
+self.addEventListener('fetch', () => {})
