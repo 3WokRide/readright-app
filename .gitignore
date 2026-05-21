@@ -30,6 +30,7 @@ yarn-debug.log*
 yarn-error.log*
 CLAUDE.md
 zplan.md
+zrefactor-plan.md
 .mcp.json
 
 
