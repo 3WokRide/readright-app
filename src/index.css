@@ -1,1 +1,13 @@
+/*
+ * Global styles — ReadRight PWA
+ *
+ * REA-27 (RR-042 · Progress Dashboard) added the Nunito Sans import below.
+ * The font is required by the Figma design system (node 5:458 "My Profile")
+ * and is used across DashboardPage for all weights (400 / 600 / 700 / 800).
+ * Variable-font axes: opsz 6–12, ital 0.
+ *
+ * Do not swap this for the plain "Nunito" family — Nunito Sans and Nunito
+ * are distinct typefaces; the Figma spec calls for Nunito Sans specifically.
+ */
+@import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,400;0,6..12,600;0,6..12,700;0,6..12,800&display=swap');
 @import "tailwindcss";

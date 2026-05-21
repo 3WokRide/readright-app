@@ -1,5 +1,72 @@
-// useSessionHistory.js — STUB (RR-003)
-// Implementation: see SDD GO1 / GO4 module for spec.
+/**
+ * useSessionHistory
+ *
+ * Linear  : REA-27 · RR-042 Progress Dashboard (In Progress)
+ * URL     : https://linear.app/readright/issue/REA-27/rr-042-progress-dashboard
+ * Project : GO4 — Results & Dashboard
+ * Assignee: Christian  |  Priority: High  |  Estimate: 3 pts
+ * Created : 2026-05-17 by Reev Santillan
+ *
+ * Fetches the authenticated learner's full session history from Supabase,
+ * ordered chronologically (oldest → newest) so chart data always renders
+ * left-to-right across time.
+ *
+ * Returns
+ * -------
+ *   sessions  {Array}   All rows from the `sessions` table for this learner,
+ *                       sorted by session_timestamp ASC.
+ *   loading   {boolean} True while the initial query is in-flight.
+ *   error     {object|null} Supabase PostgrestError if the query fails.
+ *
+ * Session row shape — 19 fields matching AssessmentResultJSON in api.js:
+ *   Core identifiers  : learner_id, passage_id, session_timestamp
+ *   GO2 scoring       : wpm, word_recognition_pct, reading_level
+ *                       reading_level ∈ { 'Frustration' | 'Instructional' | 'Independent' }
+ *   GO2 miscue counts : correct, mispronunciation, substitution, omission,
+ *                       insertion, repetition, refusal_to_pronounce
+ *   GO3 behavioral    : finger_pointing, loss_of_place, monotone_reading,
+ *                       word_by_word_reading, inaudible_reading
+ *
+ * Dependencies
+ * ------------
+ *   Blocked by : REA-6 · RR-002 (Deploy Sessions Table Schema with RLS)
+ *                The `sessions` table and its RLS policies must exist in
+ *                Supabase before this hook returns data. For local dev, seed
+ *                the table using the SQL in zplan.md §"Seed Data" with the
+ *                test account test.learner@readright.dev.
+ *
+ *   Blocks     : REA-33 · RR-049 (Dashboard Miscue + Behavioral History Charts)
+ *                That ticket will consume this same hook to power the Miscue
+ *                Patterns and Behavioral History sections. Do NOT alter the
+ *                return shape { sessions, loading, error } or the query order.
+ *
+ * Security note
+ * -------------
+ *   Supabase RLS ensures each learner only sees their own rows. Because
+ *   `persistSession: false` is set in supabase.js (SRS NFR-S3), the JWT
+ *   lives in memory only — this hook re-fetches on every mount and will
+ *   return an empty array if the session has expired.
+ */
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
+
 export function useSessionHistory() {
-  throw new Error('useSessionHistory not yet implemented')
+  const [sessions, setSessions] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    async function fetchSessions() {
+      const { data, error } = await supabase
+        .from('sessions')
+        .select('*')
+        .order('session_timestamp', { ascending: true })
+      if (error) setError(error)
+      else setSessions(data)
+      setLoading(false)
+    }
+    fetchSessions()
+  }, [])
+
+  return { sessions, loading, error }
 }
