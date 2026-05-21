@@ -11,3 +11,33 @@
  */
 @import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,400;0,6..12,600;0,6..12,700;0,6..12,800&display=swap');
 @import "tailwindcss";
+
+/*
+ * Design tokens (Figma "Readright" design system).
+ * Defined as Tailwind v4 @theme so they generate utilities:
+ *   bg-brand / text-ink / border-card-border / shadow-card / font-display, etc.
+ * Values mirror the original Figma hex palette — change here, not in markup.
+ */
+@theme {
+  --color-brand:       #a5352d;
+  --color-goal:        #36663e;
+  --color-amber:       #e6a817;
+  --color-ink:         #241917;
+  --color-ink-soft:    #58413f;
+  --color-ink-muted:   #6b5c4d;
+  --color-muted:       #6f6051;
+  --color-faint:       #c4b8b8;
+  --color-card:        #fff0ee;
+  --color-card-border: #dfbfbc;
+  --color-page:        rgba(165, 53, 45, 0.05);
+  --color-header:      #fff8f7;
+  --color-stat:        #f1dcc9;
+  --color-soft:        #ffdad6;
+  --color-badge-bg:    #ffe9e6;
+  --color-divider:     #f5eeee;
+  --color-skeleton:    #efe8e7;
+
+  --shadow-card: 0px 4px 0px #e6dcc3;
+
+  --font-display: 'Nunito Sans', sans-serif;
+}
