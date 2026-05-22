@@ -53,7 +53,7 @@ src/
   pages/         LoginPage, SessionScreen, SessionResultsPage, DashboardPage
   hooks/         GO1 quality check hooks + useSessionHistory
   lib/
-    supabase.js  Supabase client (memory-only JWT per SRS NFR-S3)
+    supabase.js  Supabase client (persisted session — stays signed in across reloads)
     api.js       FastAPI /analyze client (STUBBED in RR-003)
   data/
     passages.js  Phil-IRI Grade 4 passage bank (≥4 passages)
@@ -75,6 +75,6 @@ src/
 ## Key constraints (read before implementing)
 
 - **No offline mode** — Service Worker is for PWA installation only
-- **No localStorage for JWTs** — `persistSession: false` in supabase.js must not be changed (SRS NFR-S3)
+- **Persisted login** — `persistSession: true` in supabase.js keeps the learner signed in across reloads (JWT in localStorage, managed by the SDK; do not hand-roll token storage)
 - **api.js is stubbed** — do not call the real FastAPI until RR-005 is deployed
 - **Grade 4 only** — do not add other grade levels to passages.js

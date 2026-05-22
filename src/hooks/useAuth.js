@@ -6,9 +6,9 @@ import { supabase } from '../lib/supabase'
  *
  * Subscribes to supabase.auth.onAuthStateChange so the rest of the app can
  * react to sign-in / sign-out / token-refresh events without polling. The
- * Supabase SDK is configured with persistSession: false (SRS NFR-S3), so the
- * JWT lives in memory only — this hook NEVER writes the token to localStorage,
- * sessionStorage, or any cookie.
+ * Supabase SDK persists the session (localStorage) and refreshes the token
+ * automatically, so a reload keeps the learner signed in. This hook never
+ * touches token storage directly — the SDK owns it (see lib/supabase.js).
  *
  * Returns
  * -------
@@ -17,7 +17,7 @@ import { supabase } from '../lib/supabase'
  *   signIn   {function}     ({ email, password }) → Promise<{ error }>.
  *   loading  {boolean}      True until the first auth event fires, preventing
  *                           a flash of unauthenticated UI on page load.
- *   signOut  {function}     () → Promise; clears the in-memory session.
+ *   signOut  {function}     () → Promise; clears the persisted session.
  *
  * Consumed once by AuthContext, which fans the value out to the whole app.
  */

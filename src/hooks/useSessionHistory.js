@@ -42,10 +42,10 @@
  *
  * Security note
  * -------------
- *   Supabase RLS ensures each learner only sees their own rows. Because
- *   `persistSession: false` is set in supabase.js (SRS NFR-S3), the JWT
- *   lives in memory only — this hook re-fetches on every mount and will
- *   return an empty array if the session has expired.
+ *   Supabase RLS ensures each learner only sees their own rows. The session
+ *   persists across reloads (see supabase.js), so this hook re-fetches on each
+ *   mount against the restored session; it returns an empty array only if the
+ *   session is genuinely absent or expired.
  */
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'

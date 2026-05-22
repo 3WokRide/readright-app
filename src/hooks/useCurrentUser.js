@@ -5,8 +5,9 @@ import { supabase } from '../lib/supabase'
  * useCurrentUser — resolves the signed-in Supabase user and derives the
  * display name + avatar initial used by the header and profile card.
  *
- * Because persistSession is false (SRS NFR-S3), this re-fetches on mount.
- * Falls back to 'Learner' when no session/display_name is present.
+ * Re-fetches on mount; getUser() resolves from the persisted session, so it
+ * works after a reload. Falls back to 'Learner' when no session/display_name
+ * is present.
  */
 export function useCurrentUser() {
   const [user, setUser] = useState(null)
