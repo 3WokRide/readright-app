@@ -1,9 +1,10 @@
 // SessionScreen.jsx — STUB (RR-003)
 // Full implementation assigned to the team member owning this page.
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { getRandomPassage } from '../data/passages'
 import { submitRecording } from '../lib/api'
+
 
 const MAX_RECORDING_MS = 5 * 60 * 1000
 
@@ -12,6 +13,15 @@ const STEPS = ['UPLOADING', 'TRANSCRIBING', 'SCORING', 'DONE']
 export default function SessionScreen() {
   const passage = useMemo(() => getRandomPassage(), [])
   const navigate = useNavigate()
+  // const { state: routeState } = useLocation()
+
+  const location = useLocation()
+  const routeState = location.state
+  console.log('routeState:', routeState)
+
+
+
+  const isFirstSession = routeState?.isFirstSession ?? false
 
   const [status, setStatus] = useState('idle') // 'idle' | 'recording' | 'processing'
   const [elapsed, setElapsed] = useState(0)
@@ -74,7 +84,7 @@ export default function SessionScreen() {
         const result = await submitRecording(file, passage.id)
         clearInterval(processingTimerRef.current)
         setProcessingStep(STEPS.length - 1)
-        setTimeout(() => navigate('/results', { state: { result, passage } }), 400)
+        setTimeout(() => navigate('/results', { state: { result, passage, isFirstSession } }), 400)
       } catch (err) {
         console.error(err)
         clearInterval(processingTimerRef.current)
@@ -94,6 +104,7 @@ export default function SessionScreen() {
     mediaRecorderRef.current?.stop()
   }
 
+  console.log('status:', status, 'passage:', passage)
   if (status === 'processing') {
     return (
       <div style={styles.screen}>
@@ -114,7 +125,9 @@ export default function SessionScreen() {
           </div>
 
           <h2 style={styles.processingTitle}>Analyzing your reading...</h2>
-          <p style={styles.processingSubtitle}>This usually takes less than a minute. Please wait.</p>
+          <p style={styles.processingSubtitle}>
+            We're analysing your reading. This usually takes 1–2 minutes. Please don't close the app.
+          </p>
 
           <div style={styles.stepsRow}>
             {STEPS.map((step, i) => {
