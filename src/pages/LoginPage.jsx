@@ -1,29 +1,40 @@
-// LoginPage.jsx — minimal functional login for development/testing
-// Full branded implementation is a separate ticket.
-import { useState } from 'react'
+// LoginPage.jsx — learner authentication (RR-010, UC-1.1)
+// Auth state flows through AuthContext; this page never touches the Supabase
+// client directly.
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { useAuthContext } from '../context/AuthContext'
 import PageShell from '../components/layout/PageShell'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 
 export default function LoginPage() {
   const navigate = useNavigate()
+  const { session, signIn } = useAuthContext()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
+  // Already signed in → skip login and go straight to the session screen
+  // (routing table: /login redirects to /session if authenticated).
+  useEffect(() => {
+    if (session) navigate('/session', { replace: true })
+  }, [session, navigate])
+
   async function handleSubmit(e) {
     e.preventDefault()
     setLoading(true)
     setError(null)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { error } = await signIn({ email, password })
     if (error) {
-      setError(error.message)
+      // Never surface raw Supabase error strings to a Grade 4 learner.
+      setError(
+        'We could not sign you in. Please check your email and password, then tap Sign In again.'
+      )
       setLoading(false)
     } else {
-      navigate('/dashboard')
+      navigate('/session')
     }
   }
 
@@ -35,7 +46,7 @@ export default function LoginPage() {
           <span className="text-brand text-[32px] leading-[40px] font-extrabold">
             ReadRight
           </span>
-          <span className="text-ink-muted text-[14px] font-semibold">
+          <span className="text-ink-muted text-base font-semibold">
             Phil-IRI Oral Reading Assessment
           </span>
         </div>
@@ -44,7 +55,7 @@ export default function LoginPage() {
         <Card variant="cream" className="w-full p-6">
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1">
-              <label className="text-ink text-[13px] font-bold" htmlFor="email">
+              <label className="text-ink text-base font-bold" htmlFor="email">
                 Email
               </label>
               <input
@@ -54,13 +65,13 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="border border-card-border rounded-[8px] px-3 py-2 text-[14px] text-ink bg-white outline-none focus:border-brand"
+                className="border border-card-border rounded-[8px] px-3 py-2 min-h-[44px] text-base text-ink bg-white outline-none focus:border-brand"
                 placeholder="you@example.com"
               />
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-ink text-[13px] font-bold" htmlFor="password">
+              <label className="text-ink text-base font-bold" htmlFor="password">
                 Password
               </label>
               <input
@@ -70,18 +81,18 @@ export default function LoginPage() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="border border-card-border rounded-[8px] px-3 py-2 text-[14px] text-ink bg-white outline-none focus:border-brand"
+                className="border border-card-border rounded-[8px] px-3 py-2 min-h-[44px] text-base text-ink bg-white outline-none focus:border-brand"
                 placeholder="••••••••"
               />
             </div>
 
             {error && (
-              <p className="text-brand text-[13px] text-center font-semibold">
+              <p className="text-brand text-base text-center font-semibold">
                 {error}
               </p>
             )}
 
-            <Button type="submit" disabled={loading} className="mt-1">
+            <Button type="submit" disabled={loading} className="mt-1 min-h-[44px]">
               {loading ? 'Signing in…' : 'Sign In'}
             </Button>
           </form>
