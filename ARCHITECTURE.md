@@ -118,6 +118,17 @@ All non-critical pages (`SessionResultsPage`, `DashboardPage`) are **lazy loaded
 
 Navigation after submission: `RecordingGate` navigates to `/results` using `useNavigate`, passing `assessmentJSON` via React Router `state` (`navigate('/results', { state: { result } })`). `SessionResultsPage` reads it with `useLocation().state.result`.
 
+### Planned (stubbed) routes
+
+`LoginPage` renders two secondary actions that are **stubs** — the UI exists per the Figma design, but no route, page, or handler is wired up yet:
+
+| Trigger (LoginPage) | Intended destination | Status |
+|---|---|---|
+| "Join ReadRight" (registration link) | `/register` → `RegisterPage` | Stub — button has no `onClick`/route. No sign-up flow exists. |
+| "Forgot?" (password recovery) | `/forgot-password` → recovery flow | Stub — button has no `onClick`/route. No recovery flow exists. |
+
+These are inert `type="button"` elements today. Wiring them up requires adding the route in `src/App.jsx`, the page under `src/pages/`, and the corresponding Supabase Auth call (`signUp` / `resetPasswordForEmail`) in a hook. Until then, do not present them as working flows.
+
 ---
 
 ## Global State Management
