@@ -14,7 +14,7 @@
  */
 
 // install — no assets cached (offline not supported)
-self.addEventListener('install', (event) => {
+self.addEventListener('install', () => {
   console.info('[SW] Installing — installation support only, no caching.')
   self.skipWaiting()
 })
