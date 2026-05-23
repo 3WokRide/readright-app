@@ -107,6 +107,16 @@ export default function SessionScreen() {
       if (!mountedRef.current) return
       clearInterval(processingTimerRef.current)
       setPhase('ready')
+<<<<<<< Updated upstream
+=======
+      // A 120s timeout (RR-050) is a distinct failure from a server error, so it
+      // gets its own plain-language message with a shorter-reading suggestion.
+      setError(
+        err.code === 'TIMEOUT'
+          ? 'This is taking longer than expected. Please try recording again with a shorter reading, or check your connection.'
+          : 'Something went wrong. Please try recording again.',
+      )
+>>>>>>> Stashed changes
     }
   }
 
@@ -143,6 +153,22 @@ export default function SessionScreen() {
           <p className="mt-2 text-center text-[16px] leading-[24px] text-ink-soft">
             This usually takes 1–2 minutes. Please don't close the app.
           </p>
+          {processingElapsed >= 90 && (
+            <div
+              className="mt-4 flex w-full items-start gap-3 rounded-[12px] border border-brand/15 bg-brand/5 px-4 py-3"
+              aria-live="polite"
+            >
+              <span
+                className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-ink-soft text-[12px] font-bold text-white"
+                aria-hidden="true"
+              >
+                i
+              </span>
+              <p className="text-[14px] leading-[20px] text-ink">
+                Still working — this can take up to 2 minutes. Please don't close the app.
+              </p>
+            </div>
+          )}
 
           {/* Step progress — done steps use a checkmark (icon + colour) */}
           <ol className="mt-8 flex w-full items-start justify-between">
@@ -244,7 +270,7 @@ export default function SessionScreen() {
         ) : (
           <button
             type="button"
-            onClick={start}
+            onClick={() => { setError(null); start() }}
             className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-brand py-4 text-[17px] font-bold text-white shadow-[0px_4px_0px_#871f1a]"
           >
             <span className="size-3 rounded-full bg-white" aria-hidden="true" />
