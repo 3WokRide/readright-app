@@ -20,7 +20,7 @@ export default function PrePermissionScreen() {
     } catch (err) {
         console.warn('Permission denied or unavailable:', err)
     }
-    navigate('/session', { state: { isFirstSession } })
+    navigate('/quality-check', { state: { isFirstSession } })
     }
 
   return (
