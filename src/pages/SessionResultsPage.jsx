@@ -10,9 +10,13 @@
  * Renders the complete Phil-IRI assessment output after the recording flow
  * completes. Matches Figma design "Your Results (English)".
  *
- * Data source: React Router location.state (AssessmentResultJSON passed by
- * SessionScreen via navigate('/results', { state: result })). Falls back to
- * calling submitRecording() stub for direct-navigation dev testing.
+ * Data source: React Router location.state — SessionScreen navigates with
+ * { state: { result, passage } } (see ARCHITECTURE.md). Falls back to calling
+ * the submitRecording() stub for direct-navigation dev testing.
+ *
+ * On mount it also persists the session to Supabase with retry (RR-041, REA-26)
+ * via saveSessionRecord(). The save never blocks rendering: if all retries fail,
+ * results still show and a non-blocking save-failure banner appears (NFR-R1).
  *
  * Sections (in order):
  *   1. Reading Level badge card        → components/results/ReadingLevelCard
@@ -27,9 +31,10 @@
  * SRS NFR-U3: Behavioral section uses habit-improvement framing (see ReadingHabits).
  * SRS NFR-P2: Must render within 3 seconds of receiving data.
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { submitRecording } from '../lib/api'
+import { saveSessionRecord } from '../lib/supabase'
 import { wrRange } from '../lib/philIri'
 import PageShell from '../components/layout/PageShell'
 import Button from '../components/ui/Button'
@@ -39,20 +44,34 @@ import MiscueBreakdown from '../components/results/MiscueBreakdown'
 import ReadingHabits from '../components/results/ReadingHabits'
 import ResultsSkeleton from '../components/results/ResultsSkeleton'
 
+const DEV_PASSAGE_ID = 'phil-iri-g4-p1'
+
 export default function SessionResultsPage() {
   const { state } = useLocation()
   const navigate = useNavigate()
-  const [result, setResult] = useState(state ?? null)
-  const [loading, setLoading] = useState(!state)
+  const [result, setResult] = useState(state?.result ?? null)
+  const [passageId, setPassageId] = useState(state?.passage?.id ?? null)
+  const [loading, setLoading] = useState(!state?.result)
+  const [saveSuccess, setSaveSuccess] = useState(true)
+  const savedRef = useRef(false)
 
+  // Direct-navigation / dev fallback: no result in route state → call the stub.
   useEffect(() => {
-    if (!state) {
-      submitRecording(null, 'phil-iri-g4-p1').then((r) => {
-        setResult(r)
-        setLoading(false)
-      })
-    }
+    if (state?.result) return
+    submitRecording(null, DEV_PASSAGE_ID).then((r) => {
+      setResult(r)
+      setPassageId(DEV_PASSAGE_ID)
+      setLoading(false)
+    })
   }, [state])
+
+  // Persist the session once results are available (RR-041). savedRef ensures we
+  // INSERT exactly one row despite StrictMode's double-effect and any re-renders.
+  useEffect(() => {
+    if (!result || !passageId || savedRef.current) return
+    savedRef.current = true
+    saveSessionRecord(result, passageId).then(({ success }) => setSaveSuccess(success))
+  }, [result, passageId])
 
   return (
     <PageShell>
@@ -60,6 +79,8 @@ export default function SessionResultsPage() {
 
       {!loading && result && (
         <>
+          {!saveSuccess && <SaveFailureBanner />}
+
           <ReadingLevelCard readingLevel={result.reading_level} />
 
           <div className="flex gap-4">
@@ -90,5 +111,30 @@ export default function SessionResultsPage() {
         </>
       )}
     </PageShell>
+  )
+}
+
+/**
+ * Non-blocking banner shown when the session could not be saved after retries.
+ * Never hides results (NFR-R1). Uses an icon + amber colour (not colour alone)
+ * and gives a concrete recovery action, per the UI/UX error-message rules.
+ */
+function SaveFailureBanner() {
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-3 rounded-[12px] border border-amber bg-amber/10 px-4 py-3"
+    >
+      <span
+        className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-amber text-[12px] font-bold text-white"
+        aria-hidden="true"
+      >
+        !
+      </span>
+      <p className="text-[14px] leading-[20px] text-ink">
+        We could not save these results to your progress. Your scores below are still
+        correct. Please check your internet connection and try another reading later.
+      </p>
+    </div>
   )
 }
