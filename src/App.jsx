@@ -26,7 +26,7 @@ export default function App() {
       <Route path="/results"   element={<AuthGuard><SessionResultsPage /></AuthGuard>} />
       <Route path="/dashboard" element={<AuthGuard><DashboardPage /></AuthGuard>} />
       <Route path="/quality-check" element={<AuthGuard><QualityCheckScreen /></AuthGuard>} />
-      <Route path="/pre-session" element={<PrePermissionScreen />} />
+      <Route path="/pre-session" element={<AuthGuard><PrePermissionScreen /></AuthGuard>} />
 
       {/* Default: redirect root to login */}
       <Route path="/" element={<Navigate to="/login" replace />} />
