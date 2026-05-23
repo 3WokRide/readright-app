@@ -33,7 +33,7 @@ export function useMicCheck(audioTrack) {
 
       if (rms < RMS_MIN) {
         setMicStatus('FAIL')
-        setMessage('Your microphone is too quiet. Please speak up or move closer to the device.')
+        setMessage('Your microphone is too quiet. Please speak up')
       } else if (rms > RMS_MAX) {
         setMicStatus('FAIL')
         setMessage('Your microphone is too loud. Please move a little further from the device.')
