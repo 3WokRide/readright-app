@@ -11,14 +11,13 @@
 This project uses **npm**. Do not use yarn, pnpm, or bun.
 
 ```bash
-npm run dev        # Vite dev server (hot reload)
+npm run dev        # Vite dev server (hot reload, http://localhost:5173)
 npm run build      # Production build — Vite (TailwindCSS v4 purges unused utilities automatically)
-npm run preview    # Preview production build locally
-npm test           # Vitest unit test runner
-npm run lint       # ESLint (eslint . --ext .js,.jsx)
+npm run preview    # Preview production build locally (allows .trycloudflare.com / ngrok tunnels for mobile testing)
+npm run lint       # ESLint flat config — `eslint .` (ESLint 10, react-hooks + react-refresh)
 ```
 
-All scripts are defined in `package.json`. Do not invoke `vite`, `vitest`, or `eslint` directly unless debugging a specific tool issue.
+These four are the **only** scripts defined in `package.json`. There is **no test runner configured yet** — `npm test` does not exist and Vitest/RTL are not installed (see the Testing row below). Do not invoke `vite` or `eslint` directly unless debugging a specific tool issue.
 
 ---
 
@@ -30,12 +29,12 @@ Stored in `.env.local` (gitignored). **Never hardcode these values or commit the
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 VITE_FASTAPI_URL=
-VITE_FASTAPI_API_KEY=
+VITE_API_KEY=
 ```
 
 - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` — used to initialise the Supabase JS client in `src/lib/supabase.js`.
 - `VITE_FASTAPI_URL` — base URL for the FastAPI AI microservice (e.g., `https://api.readright.example.com`).
-- `VITE_FASTAPI_API_KEY` — static API key sent as `X-API-Key` header on every POST to `/analyze`. Never send this to Supabase or expose it in component logic.
+- `VITE_API_KEY` — static API key sent as `X-API-Key` header on every POST to `/analyze`. Never send this to Supabase or expose it in component logic. (Canonical name in `.env.example` and `src/lib/api.js` — **not** `VITE_FASTAPI_API_KEY`.)
 
 ---
 
@@ -51,8 +50,8 @@ VITE_FASTAPI_API_KEY=
 | Charting | Recharts | No Chart.js, D3, or Victory. Recharts only. |
 | Build tool | Vite | No CRA, Next.js, or Remix. |
 | PWA | Hand-rolled `public/sw.js` (install-only, no caching) registered manually in `src/main.jsx` | Service Worker for install support only. No offline caching, no background sync. Do not add `vite-plugin-pwa`. |
-| MediaPipe | `@mediapipe/face_mesh` (WASM, browser-only) | Used exclusively in `useCameraCheck` during GO1. Not active during recording or anywhere else. |
-| Testing | Vitest + React Testing Library | No Jest. |
+| MediaPipe | `@mediapipe/face_mesh` (WASM, browser-only) — **not yet installed** | Planned for `useCameraCheck` during GO1 (currently a stub that throws). When added, use only there; never active during recording. |
+| Testing | Vitest + React Testing Library (intended) — **not yet installed/configured** | No `test` script, no test files exist. When tests are added, use Vitest + RTL. No Jest. |
 
 ---
 
@@ -123,8 +122,17 @@ Filipino Grade 4 learners, ~9–10 years old, using personal mobile devices in a
 - `useQualityGate` aggregates the four check hooks and returns `{ allPassed: boolean, checks: CheckState }`.
 - **Stream ownership is split:** `useMediaStream` is the *only* hook that calls `getUserMedia` and the *only* hook that stops tracks (it owns the combined audio+video stream, the `permissionStatus` state machine, and `errorKind` classification). `useMediaRecorder` and the four GO1 check hooks are *consumers* — they receive the stream as an argument and must never call `getUserMedia` or stop a track, so the live preview keeps running after a recording stops. See ARCHITECTURE.md → "Media Stream & Permission Flow".
 
+### Current Implementation Status (snapshot — verify against the tree before relying on it)
+
+Several rules above describe the *target* architecture. As of this writing the actual `src/` tree is partway there:
+
+- **Implemented:** `useMediaStream`, `useMediaRecorder`, `useAuth` (+ `AuthContext`/`AuthGuard`/`useCurrentUser`), `useSessionHistory`, `lib/supabase.js`, `lib/philIri.js`, `utils/platform.js`, all four pages, and the `quality/` (`CameraPreview`, `PermissionExplainer`, `PermissionDenied`), `results/`, `dashboard/`, `ui/`, and `layout/` component folders.
+- **Stubs that throw / fake data:** `useCameraCheck`, `useLightingCheck`, `useNoiseCheck`, `useMicCheck` (each throws "not yet implemented"); `lib/api.js` `submitRecording()` returns a hardcoded result after a 3s delay (real FastAPI fetch is commented inline).
+- **Referenced in docs but not yet created:** `useQualityGate`, `useAnalyzeSubmit`, `useSessionStorage`, and a `src/components/session/` folder (`RecordingGate`/`ProcessingScreen` etc. — the processing UI currently lives inline in `pages/SessionScreen.jsx`). ARCHITECTURE.md's folder tree is aspirational and lists several other names (`utils/readingLevel.js` is actually `lib/philIri.js`); trust the real tree over that document.
+
 ### Styling Rules
 - Use Tailwind utility classes directly on JSX elements.
+- The design palette lives in `src/index.css` as a Tailwind v4 `@theme` block (e.g. `--color-brand` `#a5352d`, `--color-goal`, `--color-ink`, `--color-card-border`, `--shadow-card`, and `--font-display: 'Nunito Sans'`). Use the generated semantic utilities — `bg-brand`, `text-ink`, `border-card-border`, `shadow-card`, `font-display` — instead of hardcoded hex values. Change colors in `@theme`, not in markup.
 - Do not create `*.module.css` files.
 - Do not use `@apply` in CSS except for base-reset rules in `index.css`.
 - Responsive classes must use mobile-first prefixes: write base styles for mobile, override with `sm:`, `md:`, `lg:`.
@@ -135,7 +143,7 @@ Filipino Grade 4 learners, ~9–10 years old, using personal mobile devices in a
 
 - The login session **persists** so a learner stays signed in across reloads and tab restarts (UX decision — supersedes the former "memory-only JWT" rule, NFR-S3). This is configured via `persistSession: true` in `src/lib/supabase.js`; the Supabase JS SDK stores the token in `localStorage` by default. **Let the SDK own that storage — do not write custom token-storage logic** and do not change the storage mechanism without revisiting this rule. Accepted trade-off: a `localStorage` token is readable by page scripts (XSS exposure); httpOnly cookies are not available for this serverless SPA.
 - **Never** send the learner's JWT to FastAPI. The `/analyze` endpoint only receives the MP4 file and `passage_id`.
-- **Always** attach `X-API-Key: ${import.meta.env.VITE_FASTAPI_API_KEY}` to every fetch POST to FastAPI.
+- **Always** attach `X-API-Key: ${import.meta.env.VITE_API_KEY}` to every fetch POST to FastAPI.
 - **Never** commit `.env.local` or any file containing real keys.
 - All Supabase DB operations must go through the `@supabase/supabase-js` client, which automatically attaches the Bearer JWT. Do not manually construct Authorization headers for Supabase requests.
 
@@ -143,7 +151,7 @@ Filipino Grade 4 learners, ~9–10 years old, using personal mobile devices in a
 
 ## Performance Requirements
 
-- Production build must use **code splitting and lazy loading** for non-critical routes. `DashboardPage` must not be bundled with the session recording interface. Use `React.lazy()` + `<Suspense>` for page-level components.
+- Production build must use **code splitting** for non-critical routes so `DashboardPage` is not bundled with the session recording interface. Current state: vendor splitting only — `vite.config.js` uses `build.rollupOptions.output.manualChunks` to split `vendor` (react/react-dom/react-router-dom), `supabase`, and `recharts`. Per-route `React.lazy()` + `<Suspense>` is **not yet implemented** (`App.jsx` eagerly imports all four pages); add it when route-level splitting is needed.
 - TailwindCSS v4 purges unused utilities automatically based on source-file scanning by `@tailwindcss/vite` — no `tailwind.config.js` or `content` array is required.
 - Session Results page must render within **3 seconds** of receiving FastAPI JSON.
 - Dashboard must load all charts within **5 seconds** (up to 50 sessions).
