@@ -1,60 +1,49 @@
 /**
- * api.js — FastAPI /analyze endpoint client
+ * api.js — FastAPI /analyze endpoint client (REA-28 · RR-043).
  *
- * RR-003: submitRecording() is STUBBED with a setTimeout that returns
- * hardcoded AssessmentResultJSON matching the 19-field sessions schema.
- * Replace the stub body with the real fetch() call when the FastAPI
- * microservice is deployed (RR-005 / RR-006).
+ * Posts the recorded reading (webm on Chrome, mp4 on Safari — the Blob is sent
+ * as-is, so both work) plus the passage_id to the deployed FastAPI service and
+ * returns the AssessmentResultJSON.
  *
- * Real implementation shape (for reference):
+ * Security (CLAUDE.md): only the media file + passage_id are sent — never the
+ * learner's Supabase JWT. The static X-API-Key (VITE_API_KEY) authenticates the
+ * call. Do not set Content-Type manually: fetch adds the multipart boundary for
+ * FormData automatically.
  *
- *   const form = new FormData()
- *   form.append('file', mp4File)
- *   form.append('passage_id', passageId)
- *   const res = await fetch(`${import.meta.env.VITE_FASTAPI_URL}/analyze`, {
- *     method: 'POST',
- *     headers: { 'X-API-Key': import.meta.env.VITE_API_KEY },
- *     body: form,
- *     signal: AbortSignal.timeout(120_000), // 120s max per SRS
- *   })
- *   if (!res.ok) throw new Error(`FastAPI error: ${res.status}`)
- *   return res.json()
+ * Config: VITE_FASTAPI_URL must be the deployed HTTPS base URL (not localhost).
+ * Timeout / retry UX is out of scope here — handled by RR-050 (REA-34).
  */
+
+/** Error that carries the FastAPI failure `code` (e.g. 'DB_WRITE_FAILED') for callers. */
+export class ApiError extends Error {
+  constructor(code, message) {
+    super(message)
+    this.name = 'ApiError'
+    this.code = code
+  }
+}
 
 /**
- * @param {File} mp4File   — MP4 recording from MediaRecorder
- * @param {string} passageId — e.g. 'phil-iri-g4-p1'
+ * @param {File|Blob} file      — recording from MediaRecorder (webm or mp4)
+ * @param {string}    passageId — e.g. 'phil-iri-g4-p1'
  * @returns {Promise<AssessmentResultJSON>}
+ * @throws {ApiError} on a non-2xx response
  */
-export async function submitRecording(mp4File, passageId) {
-  console.info('[api] submitRecording() STUB — returning hardcoded result in 3s')
-  console.info('[api] file:', mp4File?.name ?? '(none)', '| passageId:', passageId)
+export async function submitRecording(file, passageId) {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('passage_id', passageId)
 
-  await new Promise((resolve) => setTimeout(resolve, 3000))
+  const response = await fetch(`${import.meta.env.VITE_FASTAPI_URL}/analyze`, {
+    method: 'POST',
+    headers: { 'X-API-Key': import.meta.env.VITE_API_KEY },
+    body: formData,
+  })
 
-  // Hardcoded result matching the 19-column sessions schema (GO2 + GO3 fields).
-  // session_id, learner_id, and session_timestamp are added by the DB/frontend.
-  return {
-    // GO2 — scoring
-    passage_id:          passageId,
-    wpm:                 72.5,
-    word_recognition_pct: 88.0,
-    reading_level:       'Instructional', // 'Frustration' | 'Instructional' | 'Independent'
-
-    // GO2 — miscue counts (7 types)
-    correct:             88,
-    mispronunciation:    4,
-    substitution:        3,
-    omission:            2,
-    insertion:           1,
-    repetition:          2,
-    refusal_to_pronounce: 0,
-
-    // GO3 — behavioral flags (5 Phil-IRI qualitative behaviors)
-    finger_pointing:     false,
-    loss_of_place:       false,
-    monotone_reading:    true,
-    word_by_word_reading: false,
-    inaudible_reading:   false,
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new ApiError(err.code || 'UNKNOWN_ERROR', err.error || 'Analysis failed')
   }
+
+  return response.json()
 }
