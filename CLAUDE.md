@@ -121,6 +121,7 @@ Filipino Grade 4 learners, ~9–10 years old, using personal mobile devices in a
 - Every hook that opens a browser resource must clean up in a `useEffect` return function (stop tracks, disconnect AnalyserNode, close AudioContext, cancel timers).
 - `useCameraCheck`, `useLightingCheck`, `useNoiseCheck`, `useMicCheck` must each return `{ status: boolean, message: string }` — no other shape.
 - `useQualityGate` aggregates the four check hooks and returns `{ allPassed: boolean, checks: CheckState }`.
+- **Stream ownership is split:** `useMediaStream` is the *only* hook that calls `getUserMedia` and the *only* hook that stops tracks (it owns the combined audio+video stream, the `permissionStatus` state machine, and `errorKind` classification). `useMediaRecorder` and the four GO1 check hooks are *consumers* — they receive the stream as an argument and must never call `getUserMedia` or stop a track, so the live preview keeps running after a recording stops. See ARCHITECTURE.md → "Media Stream & Permission Flow".
 
 ### Styling Rules
 - Use Tailwind utility classes directly on JSX elements.
