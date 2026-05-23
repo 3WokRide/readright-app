@@ -53,7 +53,6 @@ export function useCameraCheck(videoElement) {
           }
 
           const landmarks = results.multiFaceLandmarks[0]
-          const nose = landmarks[1]
           const leftEye = landmarks[33]
           const rightEye = landmarks[263]
 
