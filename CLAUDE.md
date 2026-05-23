@@ -1,0 +1,162 @@
+# CLAUDE.md — ReadRight Frontend Guide
+
+> ReadRight | Team 2526-sem2-cs342-11 | React.js + TailwindCSS PWA
+> This file is the authoritative guide for Claude Code working in this repository.
+> Read this file in full before writing, editing, or deleting any code.
+
+---
+
+## Package Manager & Scripts
+
+This project uses **npm**. Do not use yarn, pnpm, or bun.
+
+```bash
+npm run dev        # Vite dev server (hot reload)
+npm run build      # Production build — Vite (TailwindCSS v4 purges unused utilities automatically)
+npm run preview    # Preview production build locally
+npm test           # Vitest unit test runner
+npm run lint       # ESLint (eslint . --ext .js,.jsx)
+```
+
+All scripts are defined in `package.json`. Do not invoke `vite`, `vitest`, or `eslint` directly unless debugging a specific tool issue.
+
+---
+
+## Environment Variables
+
+Stored in `.env.local` (gitignored). **Never hardcode these values or commit them.**
+
+```
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+VITE_FASTAPI_URL=
+VITE_FASTAPI_API_KEY=
+```
+
+- `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` — used to initialise the Supabase JS client in `src/lib/supabase.js`.
+- `VITE_FASTAPI_URL` — base URL for the FastAPI AI microservice (e.g., `https://api.readright.example.com`).
+- `VITE_FASTAPI_API_KEY` — static API key sent as `X-API-Key` header on every POST to `/analyze`. Never send this to Supabase or expose it in component logic.
+
+---
+
+## Tech Stack — Strict Constraints
+
+| Concern | Technology | Constraint |
+|---|---|---|
+| UI Framework | React 19.1 (functional components + hooks only) | No class components. No React.createClass. |
+| Styling | TailwindCSS v4 via `@tailwindcss/vite` | Zero-config — no `tailwind.config.js` needed; unused utilities are purged automatically. Utility classes only. No custom CSS files except `index.css` for base resets. No inline `style={{}}` props unless absolutely unavoidable (e.g., dynamic canvas dimensions). |
+| Routing | React Router v7 (`<BrowserRouter>` + `<Routes>`/`<Route>`) | No `<Switch>`. Use `<Routes>` / `<Route>` with `element={}` syntax only. |
+| State | React built-in (`useState`, `useReducer`, `useContext`) | No Redux, Zustand, Jotai, or any external state library. |
+| Data fetching | `@supabase/supabase-js` SDK + native `fetch` | No Axios, SWR, React Query, or Apollo. Supabase client for all DB/Auth. `fetch` for FastAPI POST only. |
+| Charting | Recharts | No Chart.js, D3, or Victory. Recharts only. |
+| Build tool | Vite | No CRA, Next.js, or Remix. |
+| PWA | Hand-rolled `public/sw.js` (install-only, no caching) registered manually in `src/main.jsx` | Service Worker for install support only. No offline caching, no background sync. Do not add `vite-plugin-pwa`. |
+| MediaPipe | `@mediapipe/face_mesh` (WASM, browser-only) | Used exclusively in `useCameraCheck` during GO1. Not active during recording or anywhere else. |
+| Testing | Vitest + React Testing Library | No Jest. |
+
+---
+
+## UI/UX Design Rules — Non-Negotiable
+
+These rules apply to every learner-facing screen. Violations are bugs.
+
+### Target User
+Filipino Grade 4 learners, ~9–10 years old, using personal mobile devices in a home setting, without adult assistance. Design for this user, not for developers.
+
+### Typography
+- Body text: **minimum 16px** on mobile (`text-base` or larger).
+- Passage display text: **minimum 18px** (`text-lg` or larger).
+- No technical jargon visible to the learner. Never display: "miscue", "ASR", "forced alignment", "JWT", "MediaPipe", "pipeline", "WPM" as a raw acronym without explanation.
+
+### Touch Targets
+- Every interactive element (button, toggle, link) must have a minimum touch target of **44×44px**.
+- Use `min-h-[44px] min-w-[44px]` utility classes on all interactive elements.
+
+### Color + Accessibility
+- All GO1 pass/fail indicators must use **both color and an icon/label** — never color alone.
+  - PASS: green + checkmark icon
+  - FAIL: red/amber + X icon or warning icon + plain-language guidance text
+- Do not rely on color as the sole differentiator for any state anywhere in the app.
+
+### Mobile-First Layout
+- Primary layout target: **mobile portrait 360–430px wide**.
+- All content accessible without horizontal scroll.
+- The passage display must show the full passage text without requiring the learner to scroll during reading.
+- Tablet (768px+) and desktop (1280px+) must scale gracefully using Tailwind responsive prefixes (`sm:`, `md:`, `lg:`). Desktop is not required to have a distinct layout.
+
+### Error Messages
+- Every error message must be:
+  1. Written in plain, age-appropriate Filipino English.
+  2. Specific about what went wrong (no generic "Something went wrong").
+  3. Followed by a concrete recovery action the learner can take.
+- Examples of non-compliant messages: "Error", "Check failed", "500", "Network error".
+
+### Session Flow Constraint
+- The number of learner actions from login to viewing results must not exceed **5 steps**:
+  1. Log in
+  2. Pass GO1 checks
+  3. Tap Record
+  4. Tap Stop
+  5. View results
+- Do not add additional confirmation dialogs, intermediate screens, or required steps beyond these.
+
+---
+
+## Component Structure Conventions
+
+### File Naming
+- Components: `PascalCase.jsx` (e.g., `RecordingGate.jsx`)
+- Hooks: `camelCase` prefixed with `use` (e.g., `useNoiseCheck.js`)
+- Utilities/services: `camelCase.js` (e.g., `supabase.js`)
+- Pages: `PascalCase.jsx` in `src/pages/` (e.g., `DashboardPage.jsx`)
+
+### Component Rules
+- Functional components only. Export as named exports for non-page components; default export for pages.
+- Co-locate component-specific logic in a custom hook where the logic involves side effects or browser APIs.
+- Props must be destructured in the function signature.
+- No component should own both a browser API side effect (getUserMedia, MediaRecorder, AnalyserNode, Canvas) and rendering logic for a different concern. Separate them.
+
+### Hook Rules
+- All browser API access (getUserMedia, Web Audio API, Canvas API, MediaPipe WASM) must live in custom hooks, not inside component render functions.
+- Every hook that opens a browser resource must clean up in a `useEffect` return function (stop tracks, disconnect AnalyserNode, close AudioContext, cancel timers).
+- `useCameraCheck`, `useLightingCheck`, `useNoiseCheck`, `useMicCheck` must each return `{ status: boolean, message: string }` — no other shape.
+- `useQualityGate` aggregates the four check hooks and returns `{ allPassed: boolean, checks: CheckState }`.
+
+### Styling Rules
+- Use Tailwind utility classes directly on JSX elements.
+- Do not create `*.module.css` files.
+- Do not use `@apply` in CSS except for base-reset rules in `index.css`.
+- Responsive classes must use mobile-first prefixes: write base styles for mobile, override with `sm:`, `md:`, `lg:`.
+
+---
+
+## Security Rules
+
+- The login session **persists** so a learner stays signed in across reloads and tab restarts (UX decision — supersedes the former "memory-only JWT" rule, NFR-S3). This is configured via `persistSession: true` in `src/lib/supabase.js`; the Supabase JS SDK stores the token in `localStorage` by default. **Let the SDK own that storage — do not write custom token-storage logic** and do not change the storage mechanism without revisiting this rule. Accepted trade-off: a `localStorage` token is readable by page scripts (XSS exposure); httpOnly cookies are not available for this serverless SPA.
+- **Never** send the learner's JWT to FastAPI. The `/analyze` endpoint only receives the MP4 file and `passage_id`.
+- **Always** attach `X-API-Key: ${import.meta.env.VITE_FASTAPI_API_KEY}` to every fetch POST to FastAPI.
+- **Never** commit `.env.local` or any file containing real keys.
+- All Supabase DB operations must go through the `@supabase/supabase-js` client, which automatically attaches the Bearer JWT. Do not manually construct Authorization headers for Supabase requests.
+
+---
+
+## Performance Requirements
+
+- Production build must use **code splitting and lazy loading** for non-critical routes. `DashboardPage` must not be bundled with the session recording interface. Use `React.lazy()` + `<Suspense>` for page-level components.
+- TailwindCSS v4 purges unused utilities automatically based on source-file scanning by `@tailwindcss/vite` — no `tailwind.config.js` or `content` array is required.
+- Session Results page must render within **3 seconds** of receiving FastAPI JSON.
+- Dashboard must load all charts within **5 seconds** (up to 50 sessions).
+- PWA must be interactive within **5 seconds** on mid-range Android (4G LTE).
+
+---
+
+## What Claude Code Must NOT Do
+
+- Do not install any package not already listed in `package.json` without explicit instruction.
+- Do not create a `pages/` directory using Next.js App Router conventions — this is a Vite + React Router SPA.
+- Do not implement offline caching in the Service Worker.
+- Do not add any teacher, admin, or multi-role UI. There is exactly one user role: Learner. (A learner self sign-up / registration flow is in scope — it is not a second role.)
+- `LoginPage` renders two **stub** buttons — "Join ReadRight" (registration) and "Forgot?" (password recovery). They are inert `type="button"` placeholders matching the Figma design: no route, no handler, no Supabase call yet. Do not present them as working flows. Wiring either one up means adding the route in `App.jsx`, a page under `src/pages/`, and the matching Supabase Auth call in a hook (see ARCHITECTURE.md → "Planned (stubbed) routes").
+- Do not persist any assessment data to localStorage as a primary storage mechanism.
+- Do not mock or stub Supabase calls in production code paths.
+- Do not add loading spinners or skeleton screens that block the passage display — GO1 checks must be visible and live as soon as the camera stream is available.

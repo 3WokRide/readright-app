@@ -1,603 +1,271 @@
-// SessionScreen.jsx — STUB (RR-003)
-// Full implementation assigned to the team member owning this page.
-import { useMemo, useState, useRef, useEffect } from 'react'
+// SessionScreen.jsx — GO1 entry: permission gate → live preview → recording.
+//
+// Stream ownership (see ARCHITECTURE.md):
+//   useMediaStream  — acquires & owns the combined audio+video stream (the only
+//                     getUserMedia caller, the only track.stop() caller).
+//   useMediaRecorder — records that stream into an MP4/WebM File. It never calls
+//                     getUserMedia and never stops tracks, so the preview keeps
+//                     running after a recording stops.
+//
+// This page renders one of three states based on permissionStatus:
+//   pending/requesting → PermissionExplainer (in-app explanation before the
+//                        native browser prompt)
+//   denied             → PermissionDenied (device-specific recovery steps)
+//   granted            → passage + live CameraPreview + record/stop, then the
+//                        processing screen while results are computed.
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getRandomPassage } from '../data/passages'
 import { submitRecording } from '../lib/api'
+import { useMediaStream } from '../hooks/useMediaStream'
+import { useMediaRecorder } from '../hooks/useMediaRecorder'
+import { detectPlatform } from '../utils/platform'
+import { CameraPreview } from '../components/quality/CameraPreview'
+import { PermissionExplainer } from '../components/quality/PermissionExplainer'
+import { PermissionDenied } from '../components/quality/PermissionDenied'
 
 const MAX_RECORDING_MS = 5 * 60 * 1000
+const STEPS = ['Uploading', 'Transcribing', 'Scoring', 'Done']
 
-const STEPS = ['UPLOADING', 'TRANSCRIBING', 'SCORING', 'DONE']
+// Static height + stagger per bar. Full literal class strings so Tailwind's
+// JIT scanner generates them (avoids inline style={{}}).
+const WAVE_BARS = [
+  'h-[8px] [animation-delay:0ms]',
+  'h-[15px] [animation-delay:90ms]',
+  'h-[22px] [animation-delay:180ms]',
+  'h-[13px] [animation-delay:270ms]',
+  'h-[20px] [animation-delay:360ms]',
+  'h-[11px] [animation-delay:450ms]',
+  'h-[18px] [animation-delay:540ms]',
+  'h-[9px] [animation-delay:630ms]',
+  'h-[16px] [animation-delay:720ms]',
+]
+
+function formatElapsed(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60)
+  const s = totalSeconds % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
 
 export default function SessionScreen() {
   const passage = useMemo(() => getRandomPassage(), [])
+  const platform = useMemo(() => detectPlatform(), [])
   const navigate = useNavigate()
 
-  const [status, setStatus] = useState('idle') // 'idle' | 'recording' | 'processing'
-  const [elapsed, setElapsed] = useState(0)
+  const { stream, permissionStatus, errorKind, requestStream, retry } = useMediaStream()
+  const { recordingState, elapsed, start, stop } = useMediaRecorder(stream, {
+    maxDurationMs: MAX_RECORDING_MS,
+  })
+
+  const [phase, setPhase] = useState('ready') // 'ready' | 'processing'
   const [processingStep, setProcessingStep] = useState(0)
 
-  const mediaRecorderRef = useRef(null)
-  const streamRef = useRef(null)
-  const chunksRef = useRef([])
-  const timerRef = useRef(null)
-  const autoStopRef = useRef(null)
+  const mountedRef = useRef(true)
   const processingTimerRef = useRef(null)
 
   useEffect(() => {
+    mountedRef.current = true
     return () => {
-      clearInterval(timerRef.current)
-      clearTimeout(autoStopRef.current)
+      mountedRef.current = false
       clearInterval(processingTimerRef.current)
-      streamRef.current?.getTracks().forEach(t => t.stop())
     }
   }, [])
 
-  const formatElapsed = (s) => {
-    const m = Math.floor(s / 60)
-    const sec = s % 60
-    return `${m}:${String(sec).padStart(2, '0')}`
-  }
+  async function handleStop() {
+    setPhase('processing')
+    setProcessingStep(0)
 
-  async function startRecording() {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-    streamRef.current = stream
+    // Advance the step indicator while we wait for the result.
+    let step = 0
+    processingTimerRef.current = setInterval(() => {
+      step += 1
+      if (step < STEPS.length - 1) setProcessingStep(step)
+    }, 800)
 
-    const mimeType = MediaRecorder.isTypeSupported('video/mp4')
-      ? 'video/mp4'
-      : 'video/webm;codecs=vp8,opus'
-
-    const mediaRecorder = new MediaRecorder(stream, { mimeType })
-    mediaRecorderRef.current = mediaRecorder
-    chunksRef.current = []
-
-    mediaRecorder.ondataavailable = (e) => chunksRef.current.push(e.data)
-    mediaRecorder.onstop = async () => {
-      clearInterval(timerRef.current)
-      streamRef.current?.getTracks().forEach(t => t.stop())
-
-      const blob = new Blob(chunksRef.current, { type: mimeType })
-      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm'
-      const file = new File([blob], `recording.${ext}`, { type: mimeType })
-
-      setStatus('processing')
-      setProcessingStep(0)
-
-      // Simulate step progression while waiting
-      let step = 0
-      processingTimerRef.current = setInterval(() => {
-        step += 1
-        if (step < STEPS.length - 1) setProcessingStep(step)
-      }, 800)
-
-      try {
-        const result = await submitRecording(file, passage.id)
-        clearInterval(processingTimerRef.current)
-        setProcessingStep(STEPS.length - 1)
-        setTimeout(() => navigate('/results', { state: { result, passage } }), 400)
-      } catch (err) {
-        console.error(err)
-        clearInterval(processingTimerRef.current)
-        setStatus('idle')
-      }
+    const file = await stop()
+    if (!mountedRef.current) return
+    if (!file) {
+      clearInterval(processingTimerRef.current)
+      setPhase('ready')
+      return
     }
 
-    mediaRecorder.start()
-    setStatus('recording')
-    setElapsed(0)
-    timerRef.current = setInterval(() => setElapsed(s => s + 1), 1000)
-    autoStopRef.current = setTimeout(() => mediaRecorder.stop(), MAX_RECORDING_MS)
+    try {
+      // submitRecording (lib/api.js) is the FastAPI client. Robust timeout /
+      // retry / error UX is owned by the future useAnalyzeSubmit hook.
+      const result = await submitRecording(file, passage.id)
+      if (!mountedRef.current) return
+      clearInterval(processingTimerRef.current)
+      setProcessingStep(STEPS.length - 1)
+      setTimeout(() => {
+        if (mountedRef.current) navigate('/results', { state: { result, passage } })
+      }, 400)
+    } catch (err) {
+      console.error(err)
+      if (!mountedRef.current) return
+      clearInterval(processingTimerRef.current)
+      setPhase('ready')
+    }
   }
 
-  function stopRecording() {
-    clearTimeout(autoStopRef.current)
-    mediaRecorderRef.current?.stop()
-  }
-
-  if (status === 'processing') {
+  // --- Permission gate -------------------------------------------------------
+  if (permissionStatus === 'pending' || permissionStatus === 'requesting') {
     return (
-      <div style={styles.screen}>
-        <header style={styles.header}>
-          <div style={styles.logo}>
-            <div style={styles.logoIcon}>R</div>
-            <span style={styles.logoText}>ReadRight</span>
+      <PermissionExplainer
+        onAllow={requestStream}
+        requesting={permissionStatus === 'requesting'}
+      />
+    )
+  }
+
+  if (permissionStatus === 'denied') {
+    return <PermissionDenied platform={platform} errorKind={errorKind} onRetry={retry} />
+  }
+
+  // --- Processing screen -----------------------------------------------------
+  if (phase === 'processing') {
+    return (
+      <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-page font-display">
+        <Header />
+        <div className="flex flex-1 flex-col items-center px-5 pb-6 pt-8">
+          <div className="mb-7 flex size-32 items-center justify-center rounded-full bg-card text-brand">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
           </div>
-        </header>
 
-        <div style={styles.processingBody}>
-          <div style={styles.processingIllustration}>
-            <div style={styles.personCircle} />
-            <div style={styles.docCard}>R</div>
-            <div style={styles.magnifier}>
-              <div style={styles.magnifierGlass} />
-            </div>
-          </div>
+          <h2 className="text-center text-[22px] font-extrabold text-ink">
+            Analyzing your reading…
+          </h2>
+          <p className="mt-2 text-center text-[16px] leading-[24px] text-ink-soft">
+            This usually takes less than a minute. Please wait.
+          </p>
 
-          <h2 style={styles.processingTitle}>Analyzing your reading...</h2>
-          <p style={styles.processingSubtitle}>This usually takes less than a minute. Please wait.</p>
-
-          <div style={styles.stepsRow}>
-            {STEPS.map((step, i) => {
+          {/* Step progress — done steps use a checkmark (icon + colour) */}
+          <ol className="mt-8 flex w-full items-start justify-between">
+            {STEPS.map((label, i) => {
               const done = i < processingStep
               const active = i === processingStep
               return (
-                <div key={step} style={styles.stepItem}>
-                  {i > 0 && (
-                    <div style={{
-                      ...styles.stepLine,
-                      background: done ? '#2D6A4F' : '#D9C5B8'
-                    }} />
-                  )}
-                  <div style={{
-                    ...styles.stepDot,
-                    background: done ? '#2D6A4F' : active ? '#C0392B' : '#D9C5B8',
-                    border: active ? '3px solid #C0392B' : 'none',
-                  }}>
-                    {done && <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>✓</span>}
-                    {active && <div style={styles.stepActiveDot} />}
-                  </div>
-                  <span style={{
-                    ...styles.stepLabel,
-                    color: active ? '#C0392B' : done ? '#2D6A4F' : '#B0A090',
-                    fontWeight: active || done ? 600 : 400,
-                  }}>{step}</span>
-                </div>
+                <li key={label} className="flex flex-1 flex-col items-center gap-2">
+                  <span
+                    className={`flex size-8 items-center justify-center rounded-full text-[12px] font-bold ${
+                      done
+                        ? 'bg-goal text-white'
+                        : active
+                          ? 'bg-brand text-white'
+                          : 'bg-card-border text-white'
+                    }`}
+                  >
+                    {done ? '✓' : i + 1}
+                  </span>
+                  <span
+                    className={`text-center text-[12px] ${
+                      active ? 'font-bold text-brand' : done ? 'font-semibold text-goal' : 'text-ink-muted'
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </li>
               )
             })}
+          </ol>
+
+          <div className="mt-auto flex w-full items-start gap-3 rounded-[12px] bg-amber/10 px-4 py-3">
+            <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-amber text-[12px] font-bold text-white" aria-hidden="true">
+              i
+            </span>
+            <p className="text-[14px] leading-[20px] text-ink">
+              Do not close this screen while your reading is being checked.
+            </p>
           </div>
 
-          <div style={styles.warningBox}>
-            <span style={styles.warningIcon}>i</span>
-            <p style={styles.warningText}>Do not close this screen while your reading is being analyzed.</p>
-          </div>
-
-          <p style={styles.poweredBy}>Powered by Phil-IRI Assessment Engine</p>
+          <p className="mt-6 text-center text-[12px] text-ink-muted">
+            Powered by Phil-IRI Assessment Engine
+          </p>
         </div>
       </div>
     )
   }
 
+  // --- Granted: passage + live preview + record/stop -------------------------
+  const isRecording = recordingState === 'recording'
+
   return (
-    <div style={styles.screen}>
-      <header style={styles.header}>
-        <div style={styles.logo}>
-          <div style={styles.logoIcon}>R</div>
-          <span style={styles.logoText}>ReadRight</span>
-        </div>
-        <span style={styles.headerLabel}>READING SESSION</span>
-      </header>
+    <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-page font-display">
+      <Header label="READING SESSION" />
 
-      <div style={styles.body}>
-        <div style={styles.passageCard}>
-          <div style={styles.passageCardHeader}>
-            <h2 style={styles.passageTitle}>{passage.title}</h2>
-            <span style={styles.easyBadge}>EASY</span>
+      <div className="flex flex-1 flex-col gap-4 px-4 pb-2 pt-5">
+        <CameraPreview stream={stream} />
+
+        <div className="rounded-[16px] border border-card-border bg-white p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-[20px] font-extrabold text-ink">{passage.title}</h2>
+            <span className="rounded-full bg-goal/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-goal">
+              Easy
+            </span>
           </div>
-          <p style={styles.passageText}>{passage.text}</p>
+          <p className="text-[18px] leading-[1.85] text-ink">{passage.text}</p>
         </div>
 
-        <p style={{ textAlign: 'center', fontSize: 14, color: TEXT_MUTED, padding: '0 16px', fontFamily: 'system-ui, sans-serif' }}>
+        <p className="px-4 text-center text-[14px] text-ink-muted">
           Read this passage aloud, clearly and at your normal pace.
         </p>
 
-        {status === 'recording' && (
-          <div style={styles.recordingBar}>
-            <span style={styles.recordingDot} />
-            <span style={styles.recordingLabel}>Recording...</span>
-            <div style={styles.waveform}>
-              {Array.from({ length: 9 }).map((_, i) => (
-                <div key={i} style={{
-                  ...styles.waveBar,
-                  animationDelay: `${i * 0.08}s`,
-                }} />
+        {isRecording && (
+          <div className="flex items-center gap-3 rounded-[12px] border border-brand/20 bg-brand/5 px-4 py-3">
+            <span className="size-2.5 shrink-0 animate-pulse rounded-full bg-brand" aria-hidden="true" />
+            <span className="text-[14px] font-semibold text-brand">Recording…</span>
+            <div className="flex flex-1 items-center justify-center gap-[3px]" aria-hidden="true">
+              {WAVE_BARS.map((bar, i) => (
+                <span key={i} className={`w-[3px] rounded-full bg-brand/70 animate-pulse ${bar}`} />
               ))}
             </div>
-            <span style={styles.timer}>{formatElapsed(elapsed)}</span>
-          </div>
-        )}
-
-        {status === 'recording' && (
-          <div style={styles.checksRow}>
-            {['Mic', 'Noise', 'Camera', 'Light'].map(label => (
-              <span key={label} style={styles.checkPill}>
-                {label} <span style={styles.checkMark}>✓</span>
-              </span>
-            ))}
+            <span className="shrink-0 text-[15px] font-semibold tabular-nums text-ink">
+              {formatElapsed(elapsed)}
+            </span>
           </div>
         )}
       </div>
 
-      <div style={styles.footer}>
-        {status === 'idle' ? (
-          <button onClick={startRecording} style={styles.startBtn}>
-            <span style={styles.startBtnDot} />
-            Start Recording
-          </button>
-        ) : (
-          <button onClick={stopRecording} style={styles.stopBtn}>
-            <span style={styles.stopBtnSquare} />
+      <div className="px-4 pb-8 pt-3">
+        {isRecording ? (
+          <button
+            type="button"
+            onClick={handleStop}
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full border-[2.5px] border-brand bg-white py-4 text-[17px] font-bold text-brand"
+          >
+            <span className="size-3.5 rounded-[3px] bg-brand" aria-hidden="true" />
             Stop Recording
           </button>
+        ) : (
+          <button
+            type="button"
+            onClick={start}
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-brand py-4 text-[17px] font-bold text-white shadow-[0px_4px_0px_#871f1a]"
+          >
+            <span className="size-3 rounded-full bg-white" aria-hidden="true" />
+            Start Recording
+          </button>
         )}
       </div>
-
-      <style>{`
-        @keyframes wave {
-          0%, 100% { height: 6px; }
-          50% { height: 22px; }
-        }
-      `}</style>
     </div>
   )
 }
 
-const BEIGE = '#FAF3EE'
-const CARD_BG = '#FFFFFF'
-const RED = '#C0392B'
-const RED_LIGHT = '#F9ECEB'
-const GREEN = '#2D6A4F'
-const GREEN_LIGHT = '#E8F5EF'
-const TEXT = '#1A1008'
-const TEXT_MUTED = '#8B7355'
-const BORDER = '#E8DDD4'
-
-const styles = {
-  screen: {
-    minHeight: '100vh',
-    background: BEIGE,
-    display: 'flex',
-    flexDirection: 'column',
-    fontFamily: "'Georgia', serif",
-    maxWidth: 480,
-    margin: '0 auto',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '16px 20px',
-    borderBottom: `1px solid ${BORDER}`,
-    background: CARD_BG,
-  },
-  logo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-  },
-  logoIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    background: RED,
-    color: '#fff',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontWeight: 700,
-    fontSize: 16,
-  },
-  logoText: {
-    fontWeight: 700,
-    fontSize: 18,
-    color: TEXT,
-    fontFamily: "'Georgia', serif",
-  },
-  headerLabel: {
-    fontSize: 11,
-    fontWeight: 600,
-    letterSpacing: '0.1em',
-    color: TEXT_MUTED,
-    fontFamily: 'system-ui, sans-serif',
-  },
-  body: {
-    flex: 1,
-    padding: '20px 16px 8px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12,
-  },
-  passageCard: {
-    background: CARD_BG,
-    borderRadius: 16,
-    border: `1px solid ${BORDER}`,
-    padding: '20px 18px',
-  },
-  passageCardHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  passageTitle: {
-    fontSize: 20,
-    fontWeight: 700,
-    color: TEXT,
-    margin: 0,
-  },
-  easyBadge: {
-    background: GREEN_LIGHT,
-    color: GREEN,
-    fontSize: 11,
-    fontWeight: 700,
-    letterSpacing: '0.08em',
-    padding: '4px 10px',
-    borderRadius: 20,
-    fontFamily: 'system-ui, sans-serif',
-  },
-  passageText: {
-    fontSize: 18,
-    lineHeight: 1.85,
-    color: TEXT,
-    margin: 0,
-  },
-  recordingBar: {
-    background: RED_LIGHT,
-    border: `1px solid #F0C8C4`,
-    borderRadius: 12,
-    padding: '12px 16px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-  },
-  recordingDot: {
-    width: 10,
-    height: 10,
-    borderRadius: '50%',
-    background: RED,
-    flexShrink: 0,
-  },
-  recordingLabel: {
-    fontSize: 14,
-    fontWeight: 600,
-    color: RED,
-    fontFamily: 'system-ui, sans-serif',
-  },
-  waveform: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 2,
-    flex: 1,
-    height: 28,
-  },
-  waveBar: {
-    width: 3,
-    height: 6,
-    borderRadius: 2,
-    background: RED,
-    animation: 'wave 0.6s ease-in-out infinite',
-    flexShrink: 0,
-  },
-  timer: {
-    fontSize: 15,
-    fontWeight: 600,
-    color: TEXT,
-    fontFamily: 'system-ui, sans-serif',
-    flexShrink: 0,
-  },
-  checksRow: {
-    display: 'flex',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  checkPill: {
-    background: GREEN_LIGHT,
-    color: GREEN,
-    fontSize: 12,
-    fontWeight: 600,
-    padding: '5px 12px',
-    borderRadius: 20,
-    fontFamily: 'system-ui, sans-serif',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-  },
-  checkMark: {
-    fontSize: 11,
-  },
-  footer: {
-    padding: '12px 16px 32px',
-  },
-  startBtn: {
-    width: '100%',
-    padding: '16px',
-    background: RED,
-    color: '#fff',
-    border: 'none',
-    borderRadius: 50,
-    fontSize: 17,
-    fontWeight: 700,
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    fontFamily: 'system-ui, sans-serif',
-  },
-  startBtnDot: {
-    width: 12,
-    height: 12,
-    borderRadius: '50%',
-    background: '#fff',
-  },
-  stopBtn: {
-    width: '100%',
-    padding: '16px',
-    background: 'transparent',
-    color: RED,
-    border: `2.5px solid ${RED}`,
-    borderRadius: 50,
-    fontSize: 17,
-    fontWeight: 700,
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    fontFamily: 'system-ui, sans-serif',
-  },
-  stopBtnSquare: {
-    width: 14,
-    height: 14,
-    borderRadius: 3,
-    background: RED,
-  },
-  // Processing screen
-  processingBody: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    padding: '32px 20px 24px',
-    gap: 0,
-  },
-  processingIllustration: {
-    position: 'relative',
-    width: 160,
-    height: 160,
-    marginBottom: 28,
-  },
-  personCircle: {
-    position: 'absolute',
-    bottom: 0,
-    left: '50%',
-    transform: 'translateX(-50%)',
-    width: 100,
-    height: 110,
-    borderRadius: '50% 50% 45% 45%',
-    background: RED,
-  },
-  docCard: {
-    position: 'absolute',
-    top: 20,
-    right: 8,
-    width: 52,
-    height: 64,
-    background: '#FAF3EE',
-    border: `2px solid ${RED}`,
-    borderRadius: 6,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontWeight: 700,
-    fontSize: 18,
-    color: RED,
-    transform: 'rotate(8deg)',
-  },
-  magnifier: {
-    position: 'absolute',
-    bottom: 16,
-    left: 8,
-    width: 44,
-    height: 44,
-  },
-  magnifierGlass: {
-    width: 36,
-    height: 36,
-    borderRadius: '50%',
-    border: `4px solid #1A1008`,
-    background: 'rgba(255,255,255,0.5)',
-  },
-  processingTitle: {
-    fontSize: 22,
-    fontWeight: 700,
-    color: TEXT,
-    margin: '0 0 8px',
-    textAlign: 'center',
-  },
-  processingSubtitle: {
-    fontSize: 14,
-    color: TEXT_MUTED,
-    textAlign: 'center',
-    margin: '0 0 28px',
-    lineHeight: 1.5,
-    fontFamily: 'system-ui, sans-serif',
-  },
-  stepsRow: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-    gap: 0,
-    marginBottom: 24,
-    width: '100%',
-  },
-  stepItem: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    position: 'relative',
-    flex: 1,
-  },
-  stepLine: {
-    position: 'absolute',
-    top: 14,
-    right: '50%',
-    width: '100%',
-    height: 2,
-    background: '#D9C5B8',
-    zIndex: 0,
-  },
-  stepDot: {
-    width: 28,
-    height: 28,
-    borderRadius: '50%',
-    background: '#D9C5B8',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
-    marginBottom: 6,
-    position: 'relative',
-  },
-  stepActiveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: '50%',
-    background: '#C0392B',
-  },
-  stepLabel: {
-    fontSize: 9,
-    letterSpacing: '0.06em',
-    color: TEXT_MUTED,
-    fontFamily: 'system-ui, sans-serif',
-    textAlign: 'center',
-  },
-  warningBox: {
-    background: '#FEF9F0',
-    border: '1px solid #F0DFC0',
-    borderRadius: 10,
-    padding: '12px 14px',
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: 10,
-    width: '100%',
-    marginBottom: 'auto',
-  },
-  warningIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: '50%',
-    background: '#E8A020',
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 700,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    fontFamily: 'system-ui, sans-serif',
-  },
-  warningText: {
-    fontSize: 13,
-    color: TEXT,
-    margin: 0,
-    lineHeight: 1.5,
-    fontFamily: 'system-ui, sans-serif',
-  },
-  poweredBy: {
-    fontSize: 11,
-    color: TEXT_MUTED,
-    textAlign: 'center',
-    marginTop: 24,
-    fontFamily: 'system-ui, sans-serif',
-  },
+function Header({ label }) {
+  return (
+    <header className="flex items-center justify-between border-b border-card-border bg-header px-5 py-4">
+      <div className="flex items-center gap-2">
+        <span className="flex size-8 items-center justify-center rounded-[8px] bg-brand text-[16px] font-extrabold text-white">
+          R
+        </span>
+        <span className="text-[18px] font-extrabold text-ink">ReadRight</span>
+      </div>
+      {label && (
+        <span className="text-[11px] font-semibold tracking-[0.1em] text-ink-muted">{label}</span>
+      )}
+    </header>
+  )
 }
