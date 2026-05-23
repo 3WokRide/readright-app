@@ -17,7 +17,7 @@ export default function LoginPage() {
   // Already signed in → skip login and go straight to the session screen
   // (routing table: /login redirects to /session if authenticated).
   useEffect(() => {
-    if (session) navigate('/session', { replace: true })
+    if (session) navigate('/pre-session', { replace: true })
   }, [session, navigate])
 
   async function handleSubmit(e) {
