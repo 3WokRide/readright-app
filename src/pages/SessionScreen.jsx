@@ -14,7 +14,7 @@
 //   granted            → passage + live CameraPreview + record/stop, then the
 //                        processing screen while results are computed.
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { getRandomPassage } from '../data/passages'
 import { submitRecording } from '../lib/api'
 import { useMediaStream } from '../hooks/useMediaStream'
@@ -51,6 +51,8 @@ export default function SessionScreen() {
   const passage = useMemo(() => getRandomPassage(), [])
   const platform = useMemo(() => detectPlatform(), [])
   const navigate = useNavigate()
+  const { state: routeState } = useLocation()
+  const isFirstSession = routeState?.isFirstSession ?? false
 
   const { stream, permissionStatus, errorKind, requestStream, retry } = useMediaStream()
   const { recordingState, elapsed, start, stop } = useMediaRecorder(stream, {
@@ -98,7 +100,7 @@ export default function SessionScreen() {
       clearInterval(processingTimerRef.current)
       setProcessingStep(STEPS.length - 1)
       setTimeout(() => {
-        if (mountedRef.current) navigate('/results', { state: { result, passage } })
+        if (mountedRef.current) navigate('/results', { state: { result, passage, isFirstSession } })
       }, 400)
     } catch (err) {
       console.error(err)
@@ -139,7 +141,7 @@ export default function SessionScreen() {
             Analyzing your reading…
           </h2>
           <p className="mt-2 text-center text-[16px] leading-[24px] text-ink-soft">
-            This usually takes less than a minute. Please wait.
+            This usually takes 1–2 minutes. Please don't close the app.
           </p>
 
           {/* Step progress — done steps use a checkmark (icon + colour) */}

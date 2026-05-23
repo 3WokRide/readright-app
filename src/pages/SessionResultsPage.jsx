@@ -42,7 +42,8 @@ import ResultsSkeleton from '../components/results/ResultsSkeleton'
 export default function SessionResultsPage() {
   const { state } = useLocation()
   const navigate = useNavigate()
-  const [result, setResult] = useState(state ?? null)
+  const sessionResult = state?.result ?? state ?? null
+  const [result, setResult] = useState(sessionResult)
   const [loading, setLoading] = useState(!state)
 
   useEffect(() => {
@@ -56,6 +57,14 @@ export default function SessionResultsPage() {
 
   return (
     <PageShell>
+
+      {!loading && result && state?.isFirstSession && (
+        <div style={{ background: '#FEF9F0', border: '1px solid #F0DFC0', borderRadius: 12, padding: '14px 16px', marginBottom: 8, fontFamily: 'system-ui, sans-serif' }}>
+          <p style={{ fontSize: 15, fontWeight: 700, color: '#1A1008', margin: '0 0 4px' }}>Here are your results! 🎉</p>
+          <p style={{ fontSize: 13, color: '#8B7355', margin: 0, lineHeight: 1.55 }}>These show how you read today. Check your progress dashboard to see how you improve over time.</p>
+        </div>
+      )}
+
       {loading && <ResultsSkeleton />}
 
       {!loading && result && (

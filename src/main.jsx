@@ -3,7 +3,19 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import { AuthProvider } from './context/AuthContext.jsx'
+import { supabase } from './lib/supabase.js'
 import './index.css'
+
+// Dev-only logout escape hatch (no UI for it yet). Type `readright.logout()`
+// in the browser devtools console to clear the persisted Supabase session;
+// onAuthStateChange then fires, AuthContext drops the session, and AuthGuard
+// bounces you to /login. Guarded by import.meta.env.DEV so it never ships.
+if (import.meta.env.DEV) {
+  window.readright = {
+    logout: () => supabase.auth.signOut(),
+  }
+  console.info('[ReadRight] Dev helper ready — run readright.logout() to sign out.')
+}
 
 // Service Worker registration — PWA installation support only (SRS §2.1).
 // Production-only so it never interferes with the Vite dev server / HMR.
