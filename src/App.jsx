@@ -4,6 +4,7 @@ import LoginPage          from './pages/LoginPage.jsx'
 import SessionScreen      from './pages/SessionScreen.jsx'
 import SessionResultsPage from './pages/SessionResultsPage.jsx'
 import DashboardPage      from './pages/DashboardPage.jsx'
+import PrePermissionScreen from './pages/PrePermissionScreen.jsx'
 
 /**
  * Route map (RR-003 skeleton):
@@ -23,6 +24,7 @@ export default function App() {
       <Route path="/session"   element={<AuthGuard><SessionScreen /></AuthGuard>} />
       <Route path="/results"   element={<AuthGuard><SessionResultsPage /></AuthGuard>} />
       <Route path="/dashboard" element={<AuthGuard><DashboardPage /></AuthGuard>} />
+      <Route path="/pre-session" element={<AuthGuard><PrePermissionScreen /></AuthGuard>} />
 
       {/* Default: redirect root to login */}
       <Route path="/" element={<Navigate to="/login" replace />} />
