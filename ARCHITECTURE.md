@@ -61,7 +61,9 @@ readright-app/
 │   │   │   └── CheckIndicator.jsx      # Reusable PASS/FAIL chip (color + icon + message)
 │   │   ├── quality/
 │   │   │   ├── QualityCheckPanel.jsx   # Renders all four check indicators + camera preview
-│   │   │   └── CameraPreview.jsx       # Live <video> element for camera feed
+│   │   │   ├── CameraPreview.jsx       # Live mirrored <video> element (pure stream consumer)
+│   │   │   ├── PermissionExplainer.jsx # In-app camera/mic explanation shown BEFORE native prompt
+│   │   │   └── PermissionDenied.jsx    # Device-specific recovery screen (switches on errorKind + platform)
 │   │   ├── results/
 │   │   │   ├── ScoreSummary.jsx        # WPM, word recognition %, reading level badge
 │   │   │   ├── MiscueBreakdownList.jsx # 7 miscue type counts as bar list
@@ -78,7 +80,8 @@ readright-app/
 │   │   ├── useCameraCheck.js       # MediaPipe Face Mesh WASM — face centered + angle
 │   │   ├── useMicCheck.js          # Web Audio AnalyserNode — mic amplitude
 │   │   ├── useQualityGate.js       # Aggregates 4 check hooks → { allPassed, checks }
-│   │   ├── useMediaRecorder.js     # getUserMedia + MediaRecorder lifecycle
+│   │   ├── useMediaStream.js       # getUserMedia + permission state + stream lifecycle (ONLY track.stop caller)
+│   │   ├── useMediaRecorder.js     # MediaRecorder + blob only — consumes useMediaStream, never stops tracks
 │   │   ├── useAnalyzeSubmit.js     # fetch POST to FastAPI /analyze, timeout 120s, retry UI
 │   │   ├── useSessionStorage.js    # Supabase INSERT sessions, retry x3 exponential backoff
 │   │   ├── useSessionHistory.js    # Supabase SELECT sessions ORDER BY timestamp ASC
@@ -91,12 +94,14 @@ readright-app/
 │   │   └── passages.js             # Phil-IRI Grade 4 passage bank (id + text); random assignment logic
 │   │
 │   └── utils/
-│       └── readingLevel.js         # Maps reading_level string → plain-language label + explanation
+│       ├── readingLevel.js         # Maps reading_level string → plain-language label + explanation
+│       └── platform.js             # Coarse iOS/Android/other UA detection — selects PermissionDenied recovery copy
 │
 ├── .env.local                      # Gitignored. VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY,
 │                                   #   VITE_FASTAPI_URL, VITE_FASTAPI_API_KEY
 ├── index.html
-├── vite.config.js                  # Vite config — @vitejs/plugin-react + @tailwindcss/vite (no vite-plugin-pwa)
+├── vite.config.js                  # Vite config — @vitejs/plugin-react + @tailwindcss/vite (no vite-plugin-pwa);
+│                                   #   preview.allowedHosts permits cloudflared/ngrok tunnels for mobile PWA testing
 └── package.json                    # Tailwind v4 is zero-config — no tailwind.config.js or postcss.config.js
 ```
 
@@ -137,7 +142,7 @@ These are inert `type="button"` elements today. Wiring them up requires adding t
 
 1. **Auth state** — `AuthContext` (React Context + `useAuth` hook). Wraps the entire app. Provides `{ session, user, signIn, signOut, loading }`. All components access auth via `useAuth()`.
 
-2. **Session/GO1 state** — Local to `SessionScreen` and its children. `useQualityGate` aggregates four check hooks. `useMediaRecorder` manages the stream and blob. `useAnalyzeSubmit` manages the FastAPI POST state machine. These are not lifted above `SessionScreen`.
+2. **Session/GO1 state** — Local to `SessionScreen` and its children. `useQualityGate` aggregates four check hooks. `useMediaStream` owns the stream + permission state machine; `useMediaRecorder` consumes that stream and manages the recorded blob. `useAnalyzeSubmit` manages the FastAPI POST state machine. These are not lifted above `SessionScreen`.
 
 3. **Results state** — Passed via React Router navigation state from `SessionScreen` → `SessionResultsPage`. Not persisted in context. If the learner navigates directly to `/results` without state, redirect to `/session`.
 
@@ -249,13 +254,41 @@ The JSON returned by FastAPI and used by `ResultsPage`:
 
 | API | Used in | Active during | Notes |
 |---|---|---|---|
-| `getUserMedia` | `useMediaRecorder` | GO1 + Recording | One combined audio+video stream |
-| `MediaRecorder` | `useMediaRecorder` | Recording only | MIME: `video/mp4` (iOS), `video/webm;codecs=vp8,opus` (Android/Chrome) |
+| `getUserMedia` | `useMediaStream` | GO1 + Recording | One combined audio+video stream; the only `getUserMedia` caller and the only place tracks are stopped |
+| `MediaRecorder` | `useMediaRecorder` | Recording only | Consumes the `useMediaStream` stream; MIME: `video/mp4` (iOS), `video/webm;codecs=vp8,opus` (Android/Chrome) |
 | `Web Audio API (AnalyserNode)` | `useNoiseCheck`, `useMicCheck` | GO1 only | Disconnect AnalyserNode on cleanup |
 | `Canvas API` | `useLightingCheck` | GO1 only | Off-screen `<canvas>` element; sample every 500ms |
 | `MediaPipe Face Mesh (WASM)` | `useCameraCheck` | GO1 camera check only | Not active during recording |
 
-All five browser API hooks must clean up all resources in their `useEffect` return.
+All browser API hooks must clean up all resources in their `useEffect` return.
+
+### Media Stream & Permission Flow
+
+`getUserMedia` ownership is split across two hooks so the live preview and GO1 checks keep running after a recording stops:
+
+- **`useMediaStream`** is the *acquisition + permission + lifecycle* layer. It is the **only** hook that calls `getUserMedia` and the **only** hook that stops tracks. It returns `{ stream, audioTrack, videoTrack, permissionStatus, errorKind, requestStream, retry }`.
+- **`useMediaRecorder`** and the four GO1 check hooks (`useCameraCheck` / `useMicCheck` / `useNoiseCheck` / `useLightingCheck`) are **consumers** of that stream. They must never call `getUserMedia` and never stop a track.
+
+The native permission prompt only fires from `requestStream()`, which the UI triggers from `PermissionExplainer` after a learner tap — guaranteeing the plain-language explanation shows **before** the browser prompt.
+
+`permissionStatus` drives which screen `SessionScreen` renders:
+
+| `permissionStatus` | Meaning | Screen |
+|---|---|---|
+| `pending` | Explanation shown, awaiting the learner's tap | `PermissionExplainer` |
+| `requesting` | `getUserMedia` in flight (native prompt open) | `PermissionExplainer` (button disabled) |
+| `granted` | Stream active | Passage + `CameraPreview` + record/stop |
+| `denied` | Acquisition failed | `PermissionDenied` (recovery steps) |
+
+On failure, the raw `DOMException` never leaves `useMediaStream` — it is mapped to a stable, jargon-free `errorKind` that `PermissionDenied` switches on (with `platform` from `utils/platform.js` for the permission case):
+
+| `errorKind` | Mapped from | Recovery copy |
+|---|---|---|
+| `permission` | `NotAllowedError`, `SecurityError` | Re-enable camera & mic (iOS Safari vs Android Chrome steps) |
+| `notfound` | `NotFoundError`, `OverconstrainedError` | No camera on this device |
+| `inuse` | `NotReadableError`, `TrackStartError`, `AbortError` | Camera busy / revoked mid-session |
+| `insecure` | `mediaDevices` unavailable (non-HTTPS origin) | Open ReadRight over https |
+| `unknown` | anything else | Generic "Try Again" |
 
 ---
 
