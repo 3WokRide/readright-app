@@ -19,6 +19,8 @@
  *  4. Stats Summary Card       → components/dashboard/StatsSummaryCard
  *  5. Reading Level Trend      → components/dashboard/ReadingLevelChart
  *  6. WPM Progression          → components/dashboard/WpmChart
+ *  7. Miscue Breakdown         → components/dashboard/MiscueBreakdownChart (REA-33)
+ *  8. Reading Habits           → components/dashboard/BehavioralHistoryTable (REA-33)
  *
  * ── States ───────────────────────────────────────────────────────────────
  *
@@ -35,9 +37,8 @@
  * ── Dependencies ──────────────────────────────────────────────────────────
  *
  *  Blocked by : REA-6  · RR-002 (Deploy Sessions Table Schema with RLS)
- *  Blocks     : REA-33 · RR-049 (Dashboard Miscue + Behavioral History Charts)
- *               — those sections are out of scope here; REA-33 adds them using
- *               the same useSessionHistory hook.
+ *  REA-33     · RR-049 (Miscue Patterns + Behavioral History) — added here as
+ *               sections 7 & 8, aggregating the same useSessionHistory data.
  *
  * ── Definition of Done (REA-27) ───────────────────────────────────────────
  *
@@ -56,6 +57,8 @@ import AchievementsSection from '../components/dashboard/AchievementsSection'
 import StatsSummaryCard from '../components/dashboard/StatsSummaryCard'
 import ReadingLevelChart from '../components/dashboard/ReadingLevelChart'
 import WpmChart from '../components/dashboard/WpmChart'
+import MiscueBreakdownChart from '../components/dashboard/MiscueBreakdownChart'
+import BehavioralHistoryTable from '../components/dashboard/BehavioralHistoryTable'
 import DashboardSkeleton from '../components/dashboard/DashboardSkeleton'
 import EmptyState from '../components/dashboard/EmptyState'
 import ErrorState from '../components/dashboard/ErrorState'
@@ -99,6 +102,8 @@ export default function DashboardPage() {
           <StatsSummaryCard count={sessions.length} avgScore={avgScore} />
           <ReadingLevelChart data={levelData} />
           <WpmChart data={wpmData} latestWpm={latestWpm} improvement={improvement} />
+          <MiscueBreakdownChart sessions={sessions} />
+          <BehavioralHistoryTable sessions={sessions} />
         </>
       )}
     </PageShell>
