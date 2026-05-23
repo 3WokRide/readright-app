@@ -22,6 +22,14 @@ export default function DashboardSkeleton() {
         <Skeleton bg="bg-card-border" className="h-5 w-40 rounded" />
         <Skeleton bg="bg-card" className="w-full rounded-[12px] h-[160px]" />
       </Card>
+      <Card className="p-[25px] flex flex-col gap-4">
+        <Skeleton bg="bg-card-border" className="h-5 w-36 rounded" />
+        <Skeleton bg="bg-card" className="h-24 w-full rounded-[12px]" />
+      </Card>
+      <Card className="p-[25px] flex flex-col gap-4">
+        <Skeleton bg="bg-card-border" className="h-5 w-44 rounded" />
+        <Skeleton bg="bg-card" className="h-40 w-full rounded-[12px]" />
+      </Card>
     </>
   )
 }
