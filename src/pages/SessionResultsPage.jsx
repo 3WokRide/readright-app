@@ -42,7 +42,8 @@ import ResultsSkeleton from '../components/results/ResultsSkeleton'
 export default function SessionResultsPage() {
   const { state } = useLocation()
   const navigate = useNavigate()
-  const [result, setResult] = useState(state ?? null)
+  const sessionResult = state?.result ?? state ?? null
+  const [result, setResult] = useState(sessionResult)
   const [loading, setLoading] = useState(!state)
 
   useEffect(() => {

@@ -12,10 +12,14 @@ if (!supabaseUrl || !supabaseAnon) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnon, {
   auth: {
-    // SRS NFR-S3: JWTs must NOT persist to localStorage/sessionStorage.
-    // The Supabase SDK keeps the token in memory only.
-    persistSession: false,
-    autoRefreshToken: true,   // Required by SRS NFR-S3
+    // Session persists across reloads/tab restarts so a learner stays signed in
+    // (UX decision — supersedes the old "memory-only JWT" rule, NFR-S3). The SDK
+    // stores the token in localStorage by default; we let it own that storage and
+    // do NOT hand-roll any token persistence. Trade-off: a localStorage token is
+    // readable by page scripts (XSS exposure). httpOnly cookies are not an option
+    // for this serverless SPA, so this is an accepted, deliberate trade-off.
+    persistSession: true,
+    autoRefreshToken: true,
     detectSessionInUrl: false,
   },
 })
