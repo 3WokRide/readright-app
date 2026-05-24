@@ -3,8 +3,13 @@
 import { useState, useEffect, useRef } from 'react'
 
 const WASM_TIMEOUT_MS = 10000
-const CENTER_TOLERANCE = 0.25
-const YAW_THRESHOLD = 0.30
+// Forgiving thresholds for young learners on phones: accept faces that are
+// off-center and held at a comfortable distance (not filling the oval).
+const CENTER_TOLERANCE = 0.38
+// `yaw` below is the horizontal eye span — a face-size / proximity proxy that
+// also shrinks when the head turns far sideways. A low threshold still rejects
+// "no face" and extreme turns, but no longer forces the face right up close.
+const YAW_THRESHOLD = 0.13
 
 export function useCameraCheck(videoElement) {
   const [cameraStatus, setCameraStatus] = useState('CHECKING')
@@ -60,9 +65,10 @@ export function useCameraCheck(videoElement) {
           const faceCenterX = (leftEye.x + rightEye.x) / 2
           const isCentered = Math.abs(faceCenterX - 0.5) < CENTER_TOLERANCE
 
-          // Check yaw by comparing eye x positions (normalized 0-1)
+          // Horizontal eye span (normalized 0-1): large when the face is close
+          // and forward, small when it's far away OR turned hard to one side.
           const yaw = Math.abs(leftEye.x - rightEye.x)
-          const isLevel = yaw > YAW_THRESHOLD // eyes too close = extreme angle
+          const isLevel = yaw > YAW_THRESHOLD // too small = far away or extreme turn
 
           if (!isCentered || !isLevel) {
             setCameraStatus('FAIL')
