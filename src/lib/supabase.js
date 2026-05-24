@@ -42,7 +42,7 @@ const MAX_RETRIES = 3
  * 19-column sessions schema. miscue/behavior fields are top-level, not nested.
  *
  * @param {object} assessmentResult — flat AssessmentResultJSON from /analyze
- * @param {string} passageId        — e.g. 'phil-iri-g4-p1'
+ * @param {string} passageId        — the `passages` row UUID (see fetchPassages)
  * @returns {Promise<{ success: boolean }>}
  */
 export async function saveSessionRecord(assessmentResult, passageId) {
@@ -79,4 +79,34 @@ export async function saveSessionRecord(assessmentResult, passageId) {
     }
   }
   return { success: false }
+}
+
+/**
+ * fetchPassages — load the available reading passages from Supabase.
+ *
+ * The `passages` table is the single source of truth for passage content; the
+ * frontend no longer ships a hardcoded bank. Columns are mapped to the camelCase
+ * shape the session UI expects (`word_count` → `wordCount`). The table has no
+ * `title` column — SessionScreen shows a static heading instead. Selection
+ * (random per session) is the caller's job; see the `usePassage` hook.
+ *
+ * SELECT is allowed for the learner under RLS; ordering by `created_at` keeps
+ * the returned list stable so random picks are reproducible across a render.
+ *
+ * @returns {Promise<Array<{ id: string, text: string, wordCount: number }>>}
+ * @throws  {Error} when the query fails — the caller surfaces a recovery message.
+ */
+export async function fetchPassages() {
+  const { data, error } = await supabase
+    .from('passages')
+    .select('id, text, word_count')
+    .order('created_at', { ascending: true })
+
+  if (error) throw new Error(error.message)
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    text: row.text,
+    wordCount: row.word_count,
+  }))
 }
