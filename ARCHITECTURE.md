@@ -60,9 +60,11 @@ readright-app/
 │   │   ├── auth/
 │   │   │   └── AuthGuard.jsx           # Redirects unauthenticated users to /login
 │   │   ├── quality/                    # (no QualityCheckPanel — the page composes these directly)
-│   │   │   ├── CameraPreview.jsx       # Live mirrored <video> element (pure stream consumer)
+│   │   │   ├── CameraPreview.jsx       # Live mirrored <video>; pure stream consumer (optional onVideoNode reports the node up for /session checks)
 │   │   │   ├── PermissionExplainer.jsx # In-app camera/mic explanation shown BEFORE native prompt
 │   │   │   └── PermissionDenied.jsx    # Device-specific recovery screen (switches on errorKind + platform)
+│   │   ├── session/
+│   │   │   └── RecordingChecks.jsx     # Live GO1 indicator strip shown during recording (icon + label + ✓/✗)
 │   │   ├── results/
 │   │   │   ├── ReadingLevelCard.jsx    # Reading-level badge card
 │   │   │   ├── StatCard.jsx            # WPM / word-recognition stat tile
@@ -92,7 +94,9 @@ readright-app/
 │   │   ├── useLightingCheck.js     # Canvas API luminance → { status, message }
 │   │   ├── useCameraCheck.js       # MediaPipe Face Mesh WASM — face centered + angle → { status, message }
 │   │   ├── useMicCheck.js          # Web Audio amplitude; latches PASS once heard → { status, message }
-│   │   ├── useQualityGate.js       # Aggregates the 4 check hooks → { allPassed, checks }
+│   │   ├── useMicActivity.js       # Web Audio amplitude; non-latching silence timer (FAIL after 10s quiet) → { status, message }
+│   │   ├── useQualityGate.js       # Aggregates the 4 check hooks for /quality-check → { allPassed, checks }
+│   │   ├── useRecordingMonitor.js  # Live GO1 watchdog during recording → { checks, failure, clearFailure }
 │   │   ├── useMediaStream.js       # getUserMedia + permission state + stream lifecycle (ONLY track.stop caller)
 │   │   ├── useMediaRecorder.js     # MediaRecorder + blob only — consumes useMediaStream, never stops tracks
 │   │   ├── useAnalyzeSubmit.js     # FastAPI POST state machine — AbortController, 120s timeout, abort-on-unmount
@@ -158,7 +162,7 @@ These are inert `type="button"` elements today. Wiring them up requires adding t
 
 1. **Auth state** — `AuthContext` (React Context + `useAuth` hook). Wraps the entire app. Provides `{ session, user, signIn, signOut, loading }`. All components access auth via `useAuth()`.
 
-2. **Session/GO1 state** — Local to `SessionScreen` and its children. `useQualityGate` aggregates four check hooks. `useMediaStream` owns the stream + permission state machine; `useMediaRecorder` consumes that stream and manages the recorded blob. `useAnalyzeSubmit` manages the FastAPI POST state machine. These are not lifted above `SessionScreen`.
+2. **Session/GO1 state** — Local to `SessionScreen` and its children. `useQualityGate` aggregates the four check hooks for the `/quality-check` gate; `useRecordingMonitor` re-runs them live during recording and raises a `failure` on sustained quality loss. `useMediaStream` owns the stream + permission state machine; `useMediaRecorder` consumes that stream and manages the recorded blob. `useAnalyzeSubmit` manages the FastAPI POST state machine. These are not lifted above `SessionScreen`.
 
 3. **Results state** — Passed via React Router navigation state from `SessionScreen` → `SessionResultsPage`. Not persisted in context. If the learner navigates directly to `/results` without state, redirect to `/session`.
 
@@ -268,9 +272,9 @@ The JSON returned by FastAPI and used by `ResultsPage`:
 |---|---|---|---|
 | `getUserMedia` | `useMediaStream` | GO1 + Recording | One combined audio+video stream; the only `getUserMedia` caller and the only place tracks are stopped |
 | `MediaRecorder` | `useMediaRecorder` | Recording only | Consumes the `useMediaStream` stream; MIME: `video/mp4` (iOS), `video/webm;codecs=vp8,opus` (Android/Chrome) |
-| `Web Audio API (AnalyserNode)` | `useNoiseCheck`, `useMicCheck` | GO1 only | Disconnect AnalyserNode on cleanup |
-| `Canvas API` | `useLightingCheck` | GO1 only | Off-screen `<canvas>` element; sample every 500ms |
-| `MediaPipe Face Mesh (WASM)` | `useCameraCheck` | GO1 camera check only | Not active during recording |
+| `Web Audio API (AnalyserNode)` | `useNoiseCheck`, `useMicCheck`, `useMicActivity` | GO1 + Recording | Close the AudioContext on cleanup. `useMicCheck` runs on /quality-check; `useMicActivity` is its non-latching recording-time counterpart |
+| `Canvas API` | `useLightingCheck` | GO1 + Recording | Off-screen `<canvas>` element; sample every 500ms |
+| `MediaPipe Face Mesh (WASM)` | `useCameraCheck` | GO1 + Recording | Also runs during recording, driven by `useRecordingMonitor` (gated off when not recording) |
 
 All browser API hooks must clean up all resources in their `useEffect` return.
 
@@ -279,7 +283,7 @@ All browser API hooks must clean up all resources in their `useEffect` return.
 `getUserMedia` ownership is split across two hooks so the live preview and GO1 checks keep running after a recording stops:
 
 - **`useMediaStream`** is the *acquisition + permission + lifecycle* layer. It is the **only** hook that calls `getUserMedia` and the **only** hook that stops tracks. It returns `{ stream, audioTrack, videoTrack, permissionStatus, errorKind, requestStream, retry }`.
-- **`useMediaRecorder`** and the four GO1 check hooks (`useCameraCheck` / `useMicCheck` / `useNoiseCheck` / `useLightingCheck`) are **consumers** of that stream. They must never call `getUserMedia` and never stop a track.
+- **`useMediaRecorder`** and the GO1 check hooks (`useCameraCheck` / `useMicCheck` / `useMicActivity` / `useNoiseCheck` / `useLightingCheck`) are **consumers** of that stream. They must never call `getUserMedia` and never stop a track.
 
 On mount, `useMediaStream` first probes the Permissions API (`navigator.permissions.query` for both `camera` and `microphone`). If **both** are already `granted` from a prior visit, it acquires the stream **silently** — staying in `checking` until the stream resolves — so a returning learner skips the explanation gate and lands straight on the camera/recording UI. The probe returns "already granted" only when confident: Firefox throws a `TypeError` for these permission names and Safari may lack the API, and every uncertain case (including state `prompt`) falls back to `pending`, preserving the explanation-before-prompt guarantee below.
 
@@ -306,6 +310,15 @@ On failure, the raw `DOMException` never leaves `useMediaStream` — it is mappe
 | `inuse` | `NotReadableError`, `TrackStartError`, `AbortError` | Camera busy / revoked mid-session |
 | `insecure` | `mediaDevices` unavailable (non-HTTPS origin) | Open ReadRight over https |
 | `unknown` | anything else | Generic "Try Again" |
+
+### Real-Time Recording Monitoring
+
+The GO1 checks don't stop once recording begins — `SessionScreen` keeps watching the environment so a recording we already know is unusable is never uploaded. `useRecordingMonitor({ audioTrack, videoElement, active })` composes the four checks and returns `{ checks, failure, clearFailure }`:
+
+- It **reuses** `useCameraCheck` / `useLightingCheck` / `useNoiseCheck` unchanged, and swaps `useMicCheck` (which latches PASS for the one-time gate) for **`useMicActivity`** — a non-latching counterpart that tracks time-since-last-loud-sample and FAILs after a continuous silence window. The silence window lives inside that hook because silence is a *duration*, not an instantaneous state (normal reading pauses between words would flap a downstream timer).
+- Checks run **only while `active`** (i.e. recording). The monitor passes `null` inputs when inactive, relying on each leaf hook's `if (!input) return` guard to fully tear down MediaPipe + AudioContexts — no background CPU cost when idle.
+- A per-check **watchdog** arms a timer while a check reads `FAIL` and cancels it the moment the check returns to PASS/CHECKING, so only a *sustained* failure trips. Grace windows: mic 10s (enforced inside `useMicActivity`), camera / lighting / ambient-noise 5s each, plus a short startup cushion for the video checks so MediaPipe warm-up at the start of a take isn't counted. A `firedRef` latch raises exactly one `failure` per take.
+- On `failure`, `SessionScreen` **captures the reason first** (the monitor clears its own `failure` once recording stops), then stops the recorder and **discards** the file — it does not submit. The learner sees the specific reason and a "Record Again" button (`handleStart` calls `clearFailure()` so a stale failure can't re-fire). During recording the four statuses render as `components/session/RecordingChecks.jsx` (icon + label + ✓/✗, never colour alone). This keeps the failure → re-record loop within the 5-step session-flow constraint.
 
 ---
 

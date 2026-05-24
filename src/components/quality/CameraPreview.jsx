@@ -11,9 +11,20 @@ import { useEffect, useRef } from 'react'
  *   - `muted` is required for autoplay (and prevents echo from the live mic).
  *   - `srcObject` must be set imperatively — React can't set it via a prop.
  *   - play() must be called explicitly after setting srcObject.
+ *
+ * `onVideoNode` (optional) reports the <video> DOM node to a parent so it can run
+ * GO1 checks against the same element (e.g. real-time monitoring on /session). A
+ * callback ref — not forwardRef — because the parent needs the node as reactive
+ * state to drive its check hooks. Memoize it in the parent or the ref will thrash.
  */
-export function CameraPreview({ stream }) {
+export function CameraPreview({ stream, onVideoNode }) {
   const videoRef = useRef(null)
+
+  // Merge the internal ref (used to own srcObject/play) with the optional report.
+  const setRef = (node) => {
+    videoRef.current = node
+    onVideoNode?.(node)
+  }
 
   useEffect(() => {
     const video = videoRef.current
@@ -36,7 +47,7 @@ export function CameraPreview({ stream }) {
 
   return (
     <video
-      ref={videoRef}
+      ref={setRef}
       autoPlay
       muted
       playsInline
