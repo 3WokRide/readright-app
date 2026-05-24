@@ -131,7 +131,8 @@ export default function SessionScreen() {
         <Header />
         <div className="flex flex-1 flex-col items-center px-5 pb-6 pt-8">
           <div className="mb-7 flex size-32 items-center justify-center rounded-full bg-card text-brand">
-            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse" aria-hidden="true">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+className="animate-pulse" aria-hidden="true">
               <circle cx="11" cy="11" r="7" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
@@ -236,7 +237,8 @@ export default function SessionScreen() {
           <button
             type="button"
             onClick={handleStop}
-            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full border-[2.5px] border-brand bg-white py-4 text-[17px] font-bold text-brand"
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full border-[2.5px] border-brand bg-white py-4 text-[17px] font-bold 
+text-brand"
           >
             <span className="size-3.5 rounded-[3px] bg-brand" aria-hidden="true" />
             Stop Recording
@@ -245,7 +247,8 @@ export default function SessionScreen() {
           <button
             type="button"
             onClick={start}
-            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-brand py-4 text-[17px] font-bold text-white shadow-[0px_4px_0px_#871f1a]"
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-brand py-4 text-[17px] font-bold text-white 
+shadow-[0px_4px_0px_#871f1a]"
           >
             <span className="size-3 rounded-full bg-white" aria-hidden="true" />
             Start Recording
