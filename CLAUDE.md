@@ -50,7 +50,7 @@ VITE_API_KEY=
 | Charting | Recharts | No Chart.js, D3, or Victory. Recharts only. |
 | Build tool | Vite | No CRA, Next.js, or Remix. |
 | PWA | Hand-rolled `public/sw.js` (install-only, no caching) registered manually in `src/main.jsx` | Service Worker for install support only. No offline caching, no background sync. Do not add `vite-plugin-pwa`. |
-| MediaPipe | `@mediapipe/face_mesh` (WASM, browser-only) — **not yet installed** | Planned for `useCameraCheck` during GO1 (currently a stub that throws). When added, use only there; never active during recording. |
+| MediaPipe | `@mediapipe/face_mesh` (WASM, browser-only) — **installed** (`v0.4.1633559619`) | Used in `useCameraCheck` for the GO1 camera/face check; WASM + model assets load from the jsDelivr CDN via `locateFile`. Use only there; never active during recording. |
 | Testing | Vitest + React Testing Library (intended) — **not yet installed/configured** | No `test` script, no test files exist. When tests are added, use Vitest + RTL. No Jest. |
 
 ---
@@ -126,8 +126,8 @@ Filipino Grade 4 learners, ~9–10 years old, using personal mobile devices in a
 
 Several rules above describe the *target* architecture. As of this writing the actual `src/` tree is partway there:
 
-- **Implemented:** `useMediaStream`, `useMediaRecorder`, `useAuth` (+ `AuthContext`/`AuthGuard`/`useCurrentUser`), `useSessionHistory`, `lib/supabase.js`, `lib/philIri.js`, `utils/platform.js`, all four pages, and the `quality/` (`CameraPreview`, `PermissionExplainer`, `PermissionDenied`), `results/`, `dashboard/`, `ui/`, and `layout/` component folders.
-- **Stubs that throw / fake data:** `useCameraCheck`, `useLightingCheck`, `useNoiseCheck`, `useMicCheck` (each throws "not yet implemented"); `lib/api.js` `submitRecording()` returns a hardcoded result after a 3s delay (real FastAPI fetch is commented inline).
+- **Implemented:** `useMediaStream`, `useMediaRecorder`, `useCameraCheck` (GO1 face-mesh check — dynamically imports `@mediapipe/face_mesh`, auto-passes on a 10s WASM-load timeout or load failure), `useAuth` (+ `AuthContext`/`AuthGuard`/`useCurrentUser`), `useSessionHistory`, `lib/supabase.js`, `lib/philIri.js`, `utils/platform.js`, all four pages, and the `quality/` (`CameraPreview`, `PermissionExplainer`, `PermissionDenied`), `results/`, `dashboard/`, `ui/`, and `layout/` component folders.
+- **Stubs that throw / fake data:** `useLightingCheck`, `useNoiseCheck`, `useMicCheck` (each throws "not yet implemented"); `lib/api.js` `submitRecording()` returns a hardcoded result after a 3s delay (real FastAPI fetch is commented inline).
 - **Referenced in docs but not yet created:** `useQualityGate`, `useAnalyzeSubmit`, `useSessionStorage`, and a `src/components/session/` folder (`RecordingGate`/`ProcessingScreen` etc. — the processing UI currently lives inline in `pages/SessionScreen.jsx`). ARCHITECTURE.md's folder tree is aspirational and lists several other names (`utils/readingLevel.js` is actually `lib/philIri.js`); trust the real tree over that document.
 
 ### Styling Rules
