@@ -61,21 +61,27 @@ export default function SessionScreen() {
 
   const [phase, setPhase] = useState('ready') // 'ready' | 'processing'
   const [processingStep, setProcessingStep] = useState(0)
+  const [processingElapsed, setProcessingElapsed] = useState(0) // seconds since submit
+  const [error, setError] = useState(null)
 
   const mountedRef = useRef(true)
   const processingTimerRef = useRef(null)
+  const elapsedTimerRef = useRef(null)
 
   useEffect(() => {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
       clearInterval(processingTimerRef.current)
+      clearInterval(elapsedTimerRef.current)
     }
   }, [])
 
   async function handleStop() {
+    setError(null)
     setPhase('processing')
     setProcessingStep(0)
+    setProcessingElapsed(0)
 
     // Advance the step indicator while we wait for the result.
     let step = 0
@@ -84,20 +90,30 @@ export default function SessionScreen() {
       if (step < STEPS.length - 1) setProcessingStep(step)
     }, 800)
 
+    // Elapsed-time counter — reassures the learner the analysis is still working.
+    elapsedTimerRef.current = setInterval(() => {
+      setProcessingElapsed((s) => s + 1)
+    }, 1000)
+
+    const stopTimers = () => {
+      clearInterval(processingTimerRef.current)
+      clearInterval(elapsedTimerRef.current)
+    }
+
     const file = await stop()
     if (!mountedRef.current) return
     if (!file) {
-      clearInterval(processingTimerRef.current)
+      stopTimers()
       setPhase('ready')
       return
     }
 
     try {
-      // submitRecording (lib/api.js) is the FastAPI client. Robust timeout /
-      // retry / error UX is owned by the future useAnalyzeSubmit hook.
+      // submitRecording (lib/api.js) POSTs the recording to the real FastAPI
+      // /analyze endpoint (REA-28). Timeout handling is owned by RR-050 (REA-34).
       const result = await submitRecording(file, passage.id)
       if (!mountedRef.current) return
-      clearInterval(processingTimerRef.current)
+      stopTimers()
       setProcessingStep(STEPS.length - 1)
       setTimeout(() => {
         if (mountedRef.current) navigate('/results', { state: { result, passage, isFirstSession } })
@@ -105,8 +121,9 @@ export default function SessionScreen() {
     } catch (err) {
       console.error(err)
       if (!mountedRef.current) return
-      clearInterval(processingTimerRef.current)
+      stopTimers()
       setPhase('ready')
+      setError('Something went wrong. Please try recording again.')
     }
   }
 
@@ -143,6 +160,12 @@ className="animate-pulse" aria-hidden="true">
           </h2>
           <p className="mt-2 text-center text-[16px] leading-[24px] text-ink-soft">
             This usually takes 1–2 minutes. Please don't close the app.
+          </p>
+          <p
+            className="mt-1 text-center text-[15px] font-bold tabular-nums text-brand"
+            aria-live="polite"
+          >
+            {processingElapsed}s
           </p>
 
           {/* Step progress — done steps use a checkmark (icon + colour) */}
@@ -215,6 +238,21 @@ className="animate-pulse" aria-hidden="true">
         <p className="px-4 text-center text-[14px] text-ink-muted">
           Read this passage aloud, clearly and at your normal pace.
         </p>
+
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-3 rounded-[12px] border border-brand/30 bg-brand/5 px-4 py-3"
+          >
+            <span
+              className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-brand text-[12px] font-bold text-white"
+              aria-hidden="true"
+            >
+              !
+            </span>
+            <p className="text-[14px] leading-[20px] text-ink">{error}</p>
+          </div>
+        )}
 
         {isRecording && (
           <div className="flex items-center gap-3 rounded-[12px] border border-brand/20 bg-brand/5 px-4 py-3">
