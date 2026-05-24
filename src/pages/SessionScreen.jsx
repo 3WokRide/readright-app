@@ -14,7 +14,7 @@
 //   granted            → passage + live CameraPreview + record/stop, then the
 //                        processing screen while results are computed.
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { getRandomPassage } from '../data/passages'
 import { submitRecording } from '../lib/api'
 import { useMediaStream } from '../hooks/useMediaStream'
@@ -51,6 +51,8 @@ export default function SessionScreen() {
   const passage = useMemo(() => getRandomPassage(), [])
   const platform = useMemo(() => detectPlatform(), [])
   const navigate = useNavigate()
+  const { state: routeState } = useLocation()
+  const isFirstSession = routeState?.isFirstSession ?? false
 
   const { stream, permissionStatus, errorKind, requestStream, retry } = useMediaStream()
   const { recordingState, elapsed, start, stop } = useMediaRecorder(stream, {
@@ -114,7 +116,7 @@ export default function SessionScreen() {
       stopTimers()
       setProcessingStep(STEPS.length - 1)
       setTimeout(() => {
-        if (mountedRef.current) navigate('/results', { state: { result, passage } })
+        if (mountedRef.current) navigate('/results', { state: { result, passage, isFirstSession } })
       }, 400)
     } catch (err) {
       console.error(err)
@@ -146,7 +148,8 @@ export default function SessionScreen() {
         <Header />
         <div className="flex flex-1 flex-col items-center px-5 pb-6 pt-8">
           <div className="mb-7 flex size-32 items-center justify-center rounded-full bg-card text-brand">
-            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse" aria-hidden="true">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+className="animate-pulse" aria-hidden="true">
               <circle cx="11" cy="11" r="7" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
@@ -156,7 +159,7 @@ export default function SessionScreen() {
             Analyzing your reading…
           </h2>
           <p className="mt-2 text-center text-[16px] leading-[24px] text-ink-soft">
-            This may take up to 2 minutes. Please wait.
+            This usually takes 1–2 minutes. Please don't close the app.
           </p>
           <p
             className="mt-1 text-center text-[15px] font-bold tabular-nums text-brand"
@@ -272,7 +275,8 @@ export default function SessionScreen() {
           <button
             type="button"
             onClick={handleStop}
-            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full border-[2.5px] border-brand bg-white py-4 text-[17px] font-bold text-brand"
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full border-[2.5px] border-brand bg-white py-4 text-[17px] font-bold 
+text-brand"
           >
             <span className="size-3.5 rounded-[3px] bg-brand" aria-hidden="true" />
             Stop Recording
@@ -281,7 +285,8 @@ export default function SessionScreen() {
           <button
             type="button"
             onClick={start}
-            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-brand py-4 text-[17px] font-bold text-white shadow-[0px_4px_0px_#871f1a]"
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-brand py-4 text-[17px] font-bold text-white 
+shadow-[0px_4px_0px_#871f1a]"
           >
             <span className="size-3 rounded-full bg-white" aria-hidden="true" />
             Start Recording
