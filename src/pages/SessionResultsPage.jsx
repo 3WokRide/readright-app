@@ -11,12 +11,13 @@
  * completes. Matches Figma design "Your Results (English)".
  *
  * Data source: React Router location.state — SessionScreen navigates with
- * { state: { result, passage } } (see ARCHITECTURE.md). Falls back to calling
- * the submitRecording() stub for direct-navigation dev testing.
+ * { state: { result, passage, isFirstSession } } (see ARCHITECTURE.md). Falls
+ * back to calling submitRecording() directly for direct-navigation dev testing.
  *
  * On mount it also persists the session to Supabase with retry (RR-041, REA-26)
- * via saveSessionRecord(). The save never blocks rendering: if all retries fail,
- * results still show and a non-blocking save-failure banner appears (NFR-R1).
+ * via the useSessionStorage hook (which wraps saveSessionRecord's 3x backoff).
+ * The save never blocks rendering: if all retries fail, results still show and a
+ * non-blocking save-failure banner appears (NFR-R1).
  *
  * Sections (in order):
  *   1. Reading Level badge card        → components/results/ReadingLevelCard
@@ -26,15 +27,15 @@
  *   5. Navigation buttons → /dashboard and /session
  *
  * Blocks  : REA-32 · RR-048 (First-Time User Onboarding)
- * Blocked by: REA-8 · RR-004 (FastAPI stub) — api.js stub satisfies this now
+ * Blocked by: REA-8 · RR-004 (FastAPI) — api.js now posts to the real /analyze
  *
  * SRS NFR-U3: Behavioral section uses habit-improvement framing (see ReadingHabits).
  * SRS NFR-P2: Must render within 3 seconds of receiving data.
  */
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { submitRecording } from '../lib/api'
-import { saveSessionRecord } from '../lib/supabase'
+import { useSessionStorage } from '../hooks/useSessionStorage'
 import { wrRange } from '../lib/philIri'
 import PageShell from '../components/layout/PageShell'
 import Button from '../components/ui/Button'
@@ -53,10 +54,9 @@ export default function SessionResultsPage() {
   const [result, setResult] = useState(sessionResult)
   const [passageId, setPassageId] = useState(state?.passage?.id ?? null)
   const [loading, setLoading] = useState(!sessionResult)
-  const [saveSuccess, setSaveSuccess] = useState(true)
-  const savedRef = useRef(false)
 
-  // Direct-navigation / dev fallback: no result in route state → call the stub.
+  // Direct-navigation / dev fallback: no result in route state → call the API
+  // directly so the page can be exercised on its own.
   useEffect(() => {
     if (sessionResult) return
     submitRecording(null, DEV_PASSAGE_ID).then((r) => {
@@ -66,13 +66,9 @@ export default function SessionResultsPage() {
     })
   }, [sessionResult])
 
-  // Persist the session once results are available (RR-041). savedRef ensures we
-  // INSERT exactly one row despite StrictMode's double-effect and any re-renders.
-  useEffect(() => {
-    if (!result || !passageId || savedRef.current) return
-    savedRef.current = true
-    saveSessionRecord(result, passageId).then(({ success }) => setSaveSuccess(success))
-  }, [result, passageId])
+  // Persist the session once results are available (RR-041 · REA-26). The hook
+  // owns the StrictMode-safe once-guard; the save never blocks rendering (NFR-R1).
+  const { saveStatus } = useSessionStorage(result, passageId)
 
   return (
     <PageShell>
@@ -88,7 +84,7 @@ export default function SessionResultsPage() {
 
       {!loading && result && (
         <>
-          {!saveSuccess && <SaveFailureBanner />}
+          {saveStatus === 'failed' && <SaveFailureBanner />}
 
           <ReadingLevelCard readingLevel={result.reading_level} />
 

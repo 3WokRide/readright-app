@@ -11,7 +11,9 @@
  * FormData automatically.
  *
  * Config: VITE_FASTAPI_URL must be the deployed HTTPS base URL (not localhost).
- * Timeout / retry UX is out of scope here — handled by RR-050 (REA-34).
+ * This stays a pure fetch; the 120s timeout, abort-on-unmount, and retry-UI
+ * state machine live in the useAnalyzeSubmit hook, which passes an AbortSignal
+ * in via the `signal` option (RR-050 · REA-34).
  */
 
 /** Error that carries the FastAPI failure `code` (e.g. 'DB_WRITE_FAILED') for callers. */
@@ -24,12 +26,14 @@ export class ApiError extends Error {
 }
 
 /**
- * @param {File|Blob} file      — recording from MediaRecorder (webm or mp4)
- * @param {string}    passageId — e.g. 'phil-iri-g4-p1'
+ * @param {File|Blob} file              — recording from MediaRecorder (webm or mp4)
+ * @param {string}    passageId         — e.g. 'phil-iri-g4-p1'
+ * @param {{ signal?: AbortSignal }} [options] — abort signal from useAnalyzeSubmit
  * @returns {Promise<AssessmentResultJSON>}
  * @throws {ApiError} on a non-2xx response
+ * @throws {DOMException} 'AbortError' when the signal aborts (timeout/unmount)
  */
-export async function submitRecording(file, passageId) {
+export async function submitRecording(file, passageId, { signal } = {}) {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('passage_id', passageId)
@@ -38,6 +42,7 @@ export async function submitRecording(file, passageId) {
     method: 'POST',
     headers: { 'X-API-Key': import.meta.env.VITE_API_KEY },
     body: formData,
+    signal,
   })
 
   if (!response.ok) {

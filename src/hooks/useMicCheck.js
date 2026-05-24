@@ -63,5 +63,5 @@ export function useMicCheck(audioTrack) {
     }
   }, [audioTrack])
 
-  return { micStatus, message }
+  return { status: micStatus, message }
 }

@@ -62,5 +62,5 @@ export function useNoiseCheck(audioTrack) {
     }
   }, [audioTrack])
 
-  return { noiseStatus, message }
+  return { status: noiseStatus, message }
 }
