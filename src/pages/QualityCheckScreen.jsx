@@ -1,10 +1,7 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMediaStream } from '../hooks/useMediaStream'
-import { useMicCheck } from '../hooks/useMicCheck'
-import { useNoiseCheck } from '../hooks/useNoiseCheck'
-import { useLightingCheck } from '../hooks/useLightingCheck'
-import { useCameraCheck } from '../hooks/useCameraCheck'
+import { useQualityGate } from '../hooks/useQualityGate'
 import { detectPlatform } from '../utils/platform'
 import { PermissionDenied } from '../components/quality/PermissionDenied'
 
@@ -69,24 +66,29 @@ function CheckIndicator({ icon, label, status, message, tooltip }) {
 
 export default function QualityCheckScreen() {
   const navigate = useNavigate()
+  // The GO1 video checks need the <video> element as a reactive dependency, so
+  // we keep it in state (a ref mutation wouldn't re-run them, and reading a ref
+  // during render trips react-hooks/refs). A parallel ref to the same node lets
+  // the effect attach the stream by mutating the DOM element rather than the
+  // state value (react-hooks/immutability).
   const videoRef = useRef(null)
+  const [videoEl, setVideoEl] = useState(null)
+  const setVideoNode = useCallback((node) => {
+    videoRef.current = node
+    setVideoEl(node)
+  }, [])
   const platform = useMemo(() => detectPlatform(), [])
   const { stream, audioTrack, permissionStatus, errorKind, requestStream, retry } = useMediaStream()
 
-  const { status: micStatus, message: micMsg } = useMicCheck(audioTrack)
-  const { status: noiseStatus, message: noiseMsg } = useNoiseCheck(audioTrack)
-  const { status: lightingStatus, message: lightingMsg } = useLightingCheck(videoRef.current)
-  const { status: cameraStatus, message: cameraMsg } = useCameraCheck(videoRef.current)
+  const { allPassed, checks } = useQualityGate({ audioTrack, videoElement: videoEl })
 
-  const allPassed = [micStatus, noiseStatus, lightingStatus, cameraStatus].every(s => s === 'PASS')
-
-  // Attach stream to video element
+  // Attach the stream to the video element once both exist. Mutate the DOM node
+  // through the ref; videoEl is only read here (and drives re-runs on attach).
   useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream
-      videoRef.current.play().catch(() => {})
-    }
-  }, [stream])
+    if (!videoEl || !stream) return
+    videoRef.current.srcObject = stream
+    videoRef.current.play().catch(() => {})
+  }, [videoEl, stream])
 
   // Acquisition failed (denied / device in use / unplugged) → device-specific
   // recovery steps, matching SessionScreen rather than the bare Enable button.
@@ -100,11 +102,11 @@ export default function QualityCheckScreen() {
     navigate('/session', { state: { isFirstSession: !localStorage.getItem('rr_onboarding_seen') } })
   }
 
-  const checks = [
-    { key: 'mic', icon: '🎤', label: 'Microphone', status: micStatus, message: micMsg, tooltip: ONBOARDING_TOOLTIPS.mic },
-    { key: 'noise', icon: '🔊', label: 'Ambient Noise', status: noiseStatus, message: noiseMsg, tooltip: ONBOARDING_TOOLTIPS.noise },
-    { key: 'lighting', icon: '☀️', label: 'Lighting', status: lightingStatus, message: lightingMsg, tooltip: ONBOARDING_TOOLTIPS.lighting },
-    { key: 'camera', icon: '👤', label: 'Camera Angle', status: cameraStatus, message: cameraMsg, tooltip: ONBOARDING_TOOLTIPS.camera },
+  const checkRows = [
+    { key: 'mic', icon: '🎤', label: 'Microphone', ...checks.mic, tooltip: ONBOARDING_TOOLTIPS.mic },
+    { key: 'noise', icon: '🔊', label: 'Ambient Noise', ...checks.noise, tooltip: ONBOARDING_TOOLTIPS.noise },
+    { key: 'lighting', icon: '☀️', label: 'Lighting', ...checks.lighting, tooltip: ONBOARDING_TOOLTIPS.lighting },
+    { key: 'camera', icon: '👤', label: 'Camera Angle', ...checks.camera, tooltip: ONBOARDING_TOOLTIPS.camera },
   ]
 
   return (
@@ -142,7 +144,7 @@ export default function QualityCheckScreen() {
         ) : (
         <>
             <video
-            ref={videoRef}
+            ref={setVideoNode}
             autoPlay
             muted
             playsInline
@@ -168,7 +170,7 @@ export default function QualityCheckScreen() {
 
         {/* 2x2 check grid */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {checks.map(c => <CheckIndicator key={c.key} {...c} />)}
+          {checkRows.map(c => <CheckIndicator key={c.key} {...c} />)}
         </div>
 
         <div style={{
