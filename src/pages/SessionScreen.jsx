@@ -7,7 +7,10 @@
 //                     getUserMedia and never stops tracks, so the preview keeps
 //                     running after a recording stops.
 //
-// This page renders one of three states based on permissionStatus:
+// This page renders one of these states based on permissionStatus:
+//   checking           → neutral "Preparing camera…" placeholder while the hook
+//                        probes existing permission (and silently acquires the
+//                        stream if camera+mic were already granted)
 //   pending/requesting → PermissionExplainer (in-app explanation before the
 //                        native browser prompt)
 //   denied             → PermissionDenied (device-specific recovery steps)
@@ -128,6 +131,13 @@ export default function SessionScreen() {
   }
 
   // --- Permission gate -------------------------------------------------------
+  // While probing existing permission (and silently acquiring when pre-granted),
+  // show a quiet placeholder — never the explainer — so the pre-granted path
+  // reads as an instant jump to the recording view.
+  if (permissionStatus === 'checking') {
+    return <Preparing />
+  }
+
   if (permissionStatus === 'pending' || permissionStatus === 'requesting') {
     return (
       <PermissionExplainer
@@ -292,6 +302,28 @@ shadow-[0px_4px_0px_#871f1a]"
             Start Recording
           </button>
         )}
+      </div>
+    </div>
+  )
+}
+
+// Quiet placeholder shown while useMediaStream probes/silently acquires an
+// already-granted stream. Intentionally minimal so the pre-granted path feels
+// like a direct transition rather than a loading screen.
+function Preparing() {
+  return (
+    <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-page font-display">
+      <Header label="READING SESSION" />
+      <div className="flex flex-1 flex-col items-center justify-center px-5 pb-10">
+        <div className="mb-5 flex size-16 items-center justify-center rounded-full bg-card text-brand">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse" aria-hidden="true">
+            <path d="m23 7-7 5 7 5V7z" />
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+          </svg>
+        </div>
+        <p className="text-center text-[16px] font-semibold text-ink-soft" aria-live="polite">
+          Preparing camera…
+        </p>
       </div>
     </div>
   )

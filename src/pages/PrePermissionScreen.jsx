@@ -16,7 +16,10 @@ export default function PrePermissionScreen() {
     const isFirstSession = !localStorage.getItem('rr_onboarding_seen')
     localStorage.setItem('rr_onboarding_seen', 'true')
     try {
-        await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        // We only wanted to trigger the grant — release the device immediately so
+        // /quality-check can cleanly auto-acquire (a held stream causes 'in use').
+        s.getTracks().forEach((t) => t.stop())
     } catch (err) {
         console.warn('Permission denied or unavailable:', err)
     }

@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMediaStream } from '../hooks/useMediaStream'
 import { useMicCheck } from '../hooks/useMicCheck'
 import { useNoiseCheck } from '../hooks/useNoiseCheck'
 import { useLightingCheck } from '../hooks/useLightingCheck'
 import { useCameraCheck } from '../hooks/useCameraCheck'
+import { detectPlatform } from '../utils/platform'
+import { PermissionDenied } from '../components/quality/PermissionDenied'
 
 const RED = '#C0392B'
 const GREEN = '#2D6A4F'
@@ -68,7 +70,8 @@ function CheckIndicator({ icon, label, status, message, tooltip }) {
 export default function QualityCheckScreen() {
   const navigate = useNavigate()
   const videoRef = useRef(null)
-  const { stream, audioTrack, videoTrack, permissionStatus, requestStream } = useMediaStream()
+  const platform = useMemo(() => detectPlatform(), [])
+  const { stream, audioTrack, permissionStatus, errorKind, requestStream, retry } = useMediaStream()
 
   const { micStatus, message: micMsg } = useMicCheck(audioTrack)
   const { noiseStatus, message: noiseMsg } = useNoiseCheck(audioTrack)
@@ -84,6 +87,12 @@ export default function QualityCheckScreen() {
       videoRef.current.play().catch(() => {})
     }
   }, [stream])
+
+  // Acquisition failed (denied / device in use / unplugged) → device-specific
+  // recovery steps, matching SessionScreen rather than the bare Enable button.
+  if (permissionStatus === 'denied') {
+    return <PermissionDenied platform={platform} errorKind={errorKind} onRetry={retry} />
+  }
 
   // Auto-navigate to session when all pass and user taps record
   function handleRecord() {
@@ -115,7 +124,7 @@ export default function QualityCheckScreen() {
 
         {/* Camera preview */}
         <div style={{ borderRadius: 16, overflow: 'hidden', background: '#111', aspectRatio: '4/3', position: 'relative' }}>
-          {permissionStatus !== 'granted' ? (
+          {permissionStatus === 'pending' ? (
             <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 180 }}>
               <button
                 onClick={requestStream}
@@ -123,6 +132,12 @@ export default function QualityCheckScreen() {
               >
                 Enable Camera & Mic
               </button>
+            </div>
+        ) : permissionStatus !== 'granted' ? (
+            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 180 }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.7)', fontFamily: 'system-ui, sans-serif' }}>
+                Preparing camera…
+              </span>
             </div>
         ) : (
         <>
