@@ -16,14 +16,16 @@
 //   denied             → PermissionDenied (device-specific recovery steps)
 //   granted            → passage + live CameraPreview + record/stop, then the
 //                        processing screen while results are computed.
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getRandomPassage } from '../data/passages'
 import { useMediaStream } from '../hooks/useMediaStream'
 import { useMediaRecorder } from '../hooks/useMediaRecorder'
 import { useAnalyzeSubmit } from '../hooks/useAnalyzeSubmit'
+import { useRecordingMonitor } from '../hooks/useRecordingMonitor'
 import { detectPlatform } from '../utils/platform'
 import { CameraPreview } from '../components/quality/CameraPreview'
+import { RecordingChecks } from '../components/session/RecordingChecks'
 import { PermissionExplainer } from '../components/quality/PermissionExplainer'
 import { PermissionDenied } from '../components/quality/PermissionDenied'
 
@@ -57,13 +59,28 @@ export default function SessionScreen() {
   const { state: routeState } = useLocation()
   const isFirstSession = routeState?.isFirstSession ?? false
 
-  const { stream, permissionStatus, errorKind, requestStream, retry } = useMediaStream()
+  const { stream, audioTrack, permissionStatus, errorKind, requestStream, retry } = useMediaStream()
   const { recordingState, elapsed, start, stop } = useMediaRecorder(stream, {
     maxDurationMs: MAX_RECORDING_MS,
   })
   // useAnalyzeSubmit owns the FastAPI POST: AbortController, 120s timeout, and
   // the idle/submitting/success/error/timeout state machine (see ARCHITECTURE.md).
   const { status, result, submit, reset } = useAnalyzeSubmit()
+
+  const isRecording = recordingState === 'recording'
+
+  // The live <video> from CameraPreview, kept in state so the monitor's check
+  // hooks re-run when it mounts. Memoize the callback ref or it thrashes the node
+  // and re-inits MediaPipe every render.
+  const [videoEl, setVideoEl] = useState(null)
+  const setVideoNode = useCallback((node) => setVideoEl(node), [])
+
+  // Real-time GO1 monitoring — runs only while recording (active gates the checks).
+  const monitor = useRecordingMonitor({ audioTrack, videoElement: videoEl, active: isRecording })
+  // Reason captured from the monitor so it survives the recording stopping (which
+  // clears monitor.failure). stopReasonRef makes a quality stop claim the take once.
+  const [qualityFailure, setQualityFailure] = useState(null)
+  const stopReasonRef = useRef(false)
 
   const [processingStep, setProcessingStep] = useState(0)
   const [processingElapsed, setProcessingElapsed] = useState(0) // seconds since submit
@@ -101,7 +118,19 @@ export default function SessionScreen() {
     return () => clearTimeout(t)
   }, [status, result, navigate, passage, isFirstSession])
 
+  // Real-time quality failure: capture the reason BEFORE stopping (stopping flips
+  // isRecording false, which makes the monitor clear its own failure), then stop
+  // and DISCARD the take — never submit a recording we already know is unusable.
+  useEffect(() => {
+    if (!monitor.failure || !isRecording || stopReasonRef.current) return
+    stopReasonRef.current = true
+    setQualityFailure(monitor.failure)
+    stop().catch(() => {})
+  }, [monitor.failure, isRecording, stop])
+
   async function handleStop() {
+    if (stopReasonRef.current) return // a quality failure already claimed this take
+    stopReasonRef.current = true
     const file = await stop()
     if (!file) return
     setProcessingStep(0)
@@ -111,6 +140,9 @@ export default function SessionScreen() {
 
   function handleStart() {
     reset() // clear any prior error/timeout before a fresh take
+    setQualityFailure(null)
+    monitor.clearFailure() // drop the monitor's stale failure so it can't re-fire
+    stopReasonRef.current = false
     start()
   }
 
@@ -221,14 +253,12 @@ className="animate-pulse" aria-hidden="true">
   }
 
   // --- Granted: passage + live preview + record/stop -------------------------
-  const isRecording = recordingState === 'recording'
-
   return (
     <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-page font-display">
       <Header label="READING SESSION" />
 
       <div className="flex flex-1 flex-col gap-4 px-4 pb-2 pt-5">
-        <CameraPreview stream={stream} />
+        <CameraPreview stream={stream} onVideoNode={setVideoNode} />
 
         <div className="rounded-[16px] border border-card-border bg-white p-5">
           <div className="mb-3 flex items-center justify-between">
@@ -273,6 +303,27 @@ className="animate-pulse" aria-hidden="true">
             </span>
           </div>
         )}
+
+        {/* Live GO1 checks — only while recording (see useRecordingMonitor). */}
+        {isRecording && <RecordingChecks checks={monitor.checks} />}
+
+        {/* A real-time check failed → recording was stopped and discarded. */}
+        {!isRecording && qualityFailure && (
+          <div
+            role="alert"
+            className="flex items-start gap-3 rounded-[12px] border border-brand/30 bg-brand/5 px-4 py-3"
+          >
+            <span
+              className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-brand text-[12px] font-bold text-white"
+              aria-hidden="true"
+            >
+              !
+            </span>
+            <p className="text-[14px] leading-[20px] text-ink">
+              {qualityFailure.message} Let's try that again.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="px-4 pb-8 pt-3">
@@ -294,7 +345,7 @@ text-brand"
 shadow-[0px_4px_0px_#871f1a]"
           >
             <span className="size-3 rounded-full bg-white" aria-hidden="true" />
-            Start Recording
+            {qualityFailure ? 'Record Again' : 'Start Recording'}
           </button>
         )}
       </div>
