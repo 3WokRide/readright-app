@@ -18,7 +18,7 @@ const TEXT_MUTED = '#8B7355'
 const BORDER = '#E8DDD4'
 
 const ONBOARDING_TOOLTIPS = {
-  mic: 'Voice needs to be clear enough to analyse',
+  mic: 'Say something so we can check your microphone',
   noise: 'A quiet room gives the AI a better result',
   lighting: 'Good lighting helps us see your reading habits',
   camera: 'We need to see your face to check your reading posture',

@@ -77,8 +77,8 @@ readright-app/
 │   ├── hooks/
 │   │   ├── useNoiseCheck.js        # Web Audio AnalyserNode — ambient noise, 500ms interval
 │   │   ├── useLightingCheck.js     # Canvas API luminance, 500ms interval
-│   │   ├── useCameraCheck.js       # MediaPipe Face Mesh WASM — face centered + angle
-│   │   ├── useMicCheck.js          # Web Audio AnalyserNode — mic amplitude
+│   │   ├── useCameraCheck.js       # MediaPipe Face Mesh WASM — face centered + angle (forgiving thresholds)
+│   │   ├── useMicCheck.js          # Web Audio AnalyserNode — mic amplitude; latches PASS once clear input is heard
 │   │   ├── useQualityGate.js       # Aggregates 4 check hooks → { allPassed, checks }
 │   │   ├── useMediaStream.js       # getUserMedia + permission state + stream lifecycle (ONLY track.stop caller)
 │   │   ├── useMediaRecorder.js     # MediaRecorder + blob only — consumes useMediaStream, never stops tracks
