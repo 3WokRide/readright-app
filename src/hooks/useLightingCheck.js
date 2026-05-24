@@ -51,5 +51,5 @@ export function useLightingCheck(videoElement) {
     }
   }, [videoElement])
 
-  return { lightingStatus, message }
+  return { status: lightingStatus, message }
 }

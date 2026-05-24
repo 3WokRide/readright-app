@@ -110,5 +110,5 @@ export function useCameraCheck(videoElement) {
     }
   }, [videoElement])
 
-  return { cameraStatus, message }
+  return { status: cameraStatus, message }
 }

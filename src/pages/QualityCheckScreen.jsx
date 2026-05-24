@@ -73,10 +73,10 @@ export default function QualityCheckScreen() {
   const platform = useMemo(() => detectPlatform(), [])
   const { stream, audioTrack, permissionStatus, errorKind, requestStream, retry } = useMediaStream()
 
-  const { micStatus, message: micMsg } = useMicCheck(audioTrack)
-  const { noiseStatus, message: noiseMsg } = useNoiseCheck(audioTrack)
-  const { lightingStatus, message: lightingMsg } = useLightingCheck(videoRef.current)
-  const { cameraStatus, message: cameraMsg } = useCameraCheck(videoRef.current)
+  const { status: micStatus, message: micMsg } = useMicCheck(audioTrack)
+  const { status: noiseStatus, message: noiseMsg } = useNoiseCheck(audioTrack)
+  const { status: lightingStatus, message: lightingMsg } = useLightingCheck(videoRef.current)
+  const { status: cameraStatus, message: cameraMsg } = useCameraCheck(videoRef.current)
 
   const allPassed = [micStatus, noiseStatus, lightingStatus, cameraStatus].every(s => s === 'PASS')
 
