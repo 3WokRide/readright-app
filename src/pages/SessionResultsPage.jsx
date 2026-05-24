@@ -45,7 +45,9 @@ import MiscueBreakdown from '../components/results/MiscueBreakdown'
 import ReadingHabits from '../components/results/ReadingHabits'
 import ResultsSkeleton from '../components/results/ResultsSkeleton'
 
-const DEV_PASSAGE_ID = 'phil-iri-g4-p1'
+// Dev-only: a real `passages` row UUID, used only on direct navigation (no route
+// state). The real flow gets passage.id from SessionScreen's route state instead.
+const DEV_PASSAGE_ID = 'ccf4b227-b8c9-497f-a20b-b91072e3cfb5'
 
 export default function SessionResultsPage() {
   const { state } = useLocation()

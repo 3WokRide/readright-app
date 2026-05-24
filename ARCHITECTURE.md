@@ -43,7 +43,7 @@ readright-app/
 │   ├── index.css               # Tailwind v4 entry (@import "tailwindcss";) + base resets only
 │   │
 │   ├── lib/
-│   │   ├── supabase.js         # Supabase client + saveSessionRecord (INSERT + 3x backoff retry)
+│   │   ├── supabase.js         # Supabase client + saveSessionRecord (INSERT + 3x backoff retry) + fetchPassages (SELECT passages)
 │   │   ├── api.js              # FastAPI /analyze client — pure submitRecording(file, passageId, {signal})
 │   │   ├── philIri.js          # Phil-IRI level / word-recognition mapping (this is the old "readingLevel")
 │   │   └── dashboardStats.js   # Aggregates session history into dashboard chart series
@@ -102,6 +102,7 @@ readright-app/
 │   │   ├── useAnalyzeSubmit.js     # FastAPI POST state machine — AbortController, 120s timeout, abort-on-unmount
 │   │   ├── useSessionStorage.js    # Wraps saveSessionRecord — StrictMode once-guard → { saveStatus }
 │   │   ├── useSessionHistory.js    # Supabase SELECT sessions ORDER BY session_timestamp ASC
+│   │   ├── usePassage.js           # Fetches passages from Supabase (fetchPassages) + random pick → { passage, loading, error, retry }
 │   │   ├── useCurrentUser.js       # Resolves signed-in user → { user, displayName, initial }
 │   │   └── useAuth.js              # Supabase Auth state (session, user, signIn, signOut)
 │   │
@@ -109,8 +110,8 @@ readright-app/
 │   │   └── AuthContext.jsx         # Provides auth state via useAuth; wraps entire app
 │   │
 │   ├── data/
-│   │   ├── passages.js             # Phil-IRI English passage bank + getRandomPassage({grade,instrument,...})
 │   │   └── rename_me_review_me.js  # ⚠️ Unused leftover — slated for removal
+│   │                               # (passages now come from Supabase via lib/supabase.js → fetchPassages)
 │   │
 │   └── utils/
 │       └── platform.js             # Coarse iOS/Android/other UA detection — selects PermissionDenied copy
@@ -338,3 +339,15 @@ The GO1 checks don't stop once recording begins — `SessionScreen` keeps watchi
 `session_id` (UUID PK) · `learner_id` (UUID FK) · `passage_id` (VARCHAR) · `session_timestamp` (TIMESTAMPTZ) · `wpm` (FLOAT) · `word_recognition_pct` (FLOAT) · `reading_level` (VARCHAR) · `correct` · `mispronunciation` · `substitution` · `omission` · `insertion` · `repetition` · `refusal_to_pronounce` (all INTEGER) · `finger_pointing` · `loss_of_place` · `monotone_reading` · `word_by_word_reading` · `inaudible_reading` (all BOOLEAN)
 
 RLS: `SELECT` / `INSERT` only where `auth.uid() = learner_id`.
+
+---
+
+## Passages Table Schema (Reference)
+
+The `passages` table is the **single source of truth** for available reading passages — the frontend no longer ships a hardcoded bank. 4 columns:
+
+`id` (UUID PK) · `text` (TEXT) · `word_count` (INTEGER) · `created_at` (TIMESTAMPTZ)
+
+There is **no `title` column** — the session screen shows a static heading. The frontend reads passages via `lib/supabase.js → fetchPassages` (`SELECT id, text, word_count ORDER BY created_at`), wrapped by the `usePassage` hook which picks one at random per session. `passage.id` (the UUID) is what flows on to `/analyze` as `passage_id` and into the `sessions.passage_id` column.
+
+RLS: `SELECT` allowed for the learner.

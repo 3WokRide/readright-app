@@ -18,7 +18,7 @@
 //                        processing screen while results are computed.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { getRandomPassage } from '../data/passages'
+import { usePassage } from '../hooks/usePassage'
 import { useMediaStream } from '../hooks/useMediaStream'
 import { useMediaRecorder } from '../hooks/useMediaRecorder'
 import { useAnalyzeSubmit } from '../hooks/useAnalyzeSubmit'
@@ -53,7 +53,11 @@ function formatElapsed(totalSeconds) {
 }
 
 export default function SessionScreen() {
-  const passage = useMemo(() => getRandomPassage(), [])
+  // Passages come from Supabase (single source of truth) — fetched + randomly
+  // picked by usePassage. May still be loading when the camera is granted; the
+  // preview/GO1 checks must never be blocked on it (CLAUDE.md), only the
+  // passage card and the Start button wait for content.
+  const { passage, error: passageError, retry: retryPassage } = usePassage()
   const platform = useMemo(() => detectPlatform(), [])
   const navigate = useNavigate()
   const { state: routeState } = useLocation()
@@ -139,6 +143,7 @@ export default function SessionScreen() {
   }
 
   function handleStart() {
+    if (!passage) return // nothing to read yet — the button is disabled too
     reset() // clear any prior error/timeout before a fresh take
     setQualityFailure(null)
     monitor.clearFailure() // drop the monitor's stale failure so it can't re-fire
@@ -262,12 +267,31 @@ className="animate-pulse" aria-hidden="true">
 
         <div className="rounded-[16px] border border-card-border bg-white p-5">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[20px] font-extrabold text-ink">{passage.title}</h2>
+            <h2 className="text-[20px] font-extrabold text-ink">Read This Out Loud</h2>
             <span className="rounded-full bg-goal/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-goal">
               Easy
             </span>
           </div>
-          <p className="text-[18px] leading-[1.85] text-ink">{passage.text}</p>
+          {passageError ? (
+            <div role="alert" className="flex flex-col gap-3">
+              <p className="text-[16px] leading-[24px] text-ink">
+                We couldn't load your reading passage. Please check your internet, then tap Try Again.
+              </p>
+              <button
+                type="button"
+                onClick={retryPassage}
+                className="min-h-[44px] self-start rounded-full bg-brand px-6 py-2 text-[15px] font-bold text-white"
+              >
+                Try Again
+              </button>
+            </div>
+          ) : passage ? (
+            <p className="text-[18px] leading-[1.85] text-ink">{passage.text}</p>
+          ) : (
+            <p className="text-[16px] leading-[24px] text-ink-muted" aria-live="polite">
+              Getting your passage ready…
+            </p>
+          )}
         </div>
 
         <p className="px-4 text-center text-[14px] text-ink-muted">
@@ -341,8 +365,12 @@ text-brand"
           <button
             type="button"
             onClick={handleStart}
-            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-brand py-4 text-[17px] font-bold text-white
-shadow-[0px_4px_0px_#871f1a]"
+            disabled={!passage}
+            className={`flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full py-4 text-[17px] font-bold text-white ${
+              passage
+                ? 'bg-brand shadow-[0px_4px_0px_#871f1a]'
+                : 'cursor-not-allowed bg-card-border'
+            }`}
           >
             <span className="size-3 rounded-full bg-white" aria-hidden="true" />
             {qualityFailure ? 'Record Again' : 'Start Recording'}
