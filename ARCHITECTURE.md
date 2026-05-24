@@ -269,16 +269,21 @@ All browser API hooks must clean up all resources in their `useEffect` return.
 - **`useMediaStream`** is the *acquisition + permission + lifecycle* layer. It is the **only** hook that calls `getUserMedia` and the **only** hook that stops tracks. It returns `{ stream, audioTrack, videoTrack, permissionStatus, errorKind, requestStream, retry }`.
 - **`useMediaRecorder`** and the four GO1 check hooks (`useCameraCheck` / `useMicCheck` / `useNoiseCheck` / `useLightingCheck`) are **consumers** of that stream. They must never call `getUserMedia` and never stop a track.
 
-The native permission prompt only fires from `requestStream()`, which the UI triggers from `PermissionExplainer` after a learner tap — guaranteeing the plain-language explanation shows **before** the browser prompt.
+On mount, `useMediaStream` first probes the Permissions API (`navigator.permissions.query` for both `camera` and `microphone`). If **both** are already `granted` from a prior visit, it acquires the stream **silently** — staying in `checking` until the stream resolves — so a returning learner skips the explanation gate and lands straight on the camera/recording UI. The probe returns "already granted" only when confident: Firefox throws a `TypeError` for these permission names and Safari may lack the API, and every uncertain case (including state `prompt`) falls back to `pending`, preserving the explanation-before-prompt guarantee below.
+
+The native permission prompt only ever fires from `requestStream()` (the public wrapper for the internal `acquire('requesting')`), which the UI triggers from `PermissionExplainer` after a learner tap — guaranteeing the plain-language explanation shows **before** the browser prompt. The silent pre-granted path uses `acquire('checking')` instead, so `requesting` (and the explainer's "Asking…") is reserved exclusively for the post-tap path.
 
 `permissionStatus` drives which screen `SessionScreen` renders:
 
 | `permissionStatus` | Meaning | Screen |
 |---|---|---|
-| `pending` | Explanation shown, awaiting the learner's tap | `PermissionExplainer` |
-| `requesting` | `getUserMedia` in flight (native prompt open) | `PermissionExplainer` (button disabled) |
+| `checking` | Probing existing permission on mount (and silently acquiring if pre-granted) | Quiet "Preparing camera…" placeholder — never the explainer |
+| `pending` | Not pre-granted; explanation shown, awaiting the learner's tap | `PermissionExplainer` |
+| `requesting` | `getUserMedia` in flight after a learner tap (native prompt open) | `PermissionExplainer` (button disabled) |
 | `granted` | Stream active | Passage + `CameraPreview` + record/stop |
 | `denied` | Acquisition failed | `PermissionDenied` (recovery steps) |
+
+`QualityCheckScreen` keys off the same `permissionStatus`: it shows the live camera on `granted`, the "Enable Camera & Mic" button on `pending`, the "Preparing camera…" placeholder for `checking`/`requesting`, and the shared `PermissionDenied` on `denied`. Reaching `/quality-check` via `PrePermissionScreen` (which probes for the grant then **stops its probe stream's tracks immediately**) therefore lands on a live preview with no manual tap.
 
 On failure, the raw `DOMException` never leaves `useMediaStream` — it is mapped to a stable, jargon-free `errorKind` that `PermissionDenied` switches on (with `platform` from `utils/platform.js` for the permission case):
 
