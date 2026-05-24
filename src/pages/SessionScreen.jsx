@@ -16,12 +16,12 @@
 //   denied             → PermissionDenied (device-specific recovery steps)
 //   granted            → passage + live CameraPreview + record/stop, then the
 //                        processing screen while results are computed.
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getRandomPassage } from '../data/passages'
-import { submitRecording } from '../lib/api'
 import { useMediaStream } from '../hooks/useMediaStream'
 import { useMediaRecorder } from '../hooks/useMediaRecorder'
+import { useAnalyzeSubmit } from '../hooks/useAnalyzeSubmit'
 import { detectPlatform } from '../utils/platform'
 import { CameraPreview } from '../components/quality/CameraPreview'
 import { PermissionExplainer } from '../components/quality/PermissionExplainer'
@@ -61,74 +61,67 @@ export default function SessionScreen() {
   const { recordingState, elapsed, start, stop } = useMediaRecorder(stream, {
     maxDurationMs: MAX_RECORDING_MS,
   })
+  // useAnalyzeSubmit owns the FastAPI POST: AbortController, 120s timeout, and
+  // the idle/submitting/success/error/timeout state machine (see ARCHITECTURE.md).
+  const { status, result, submit, reset } = useAnalyzeSubmit()
 
-  const [phase, setPhase] = useState('ready') // 'ready' | 'processing'
   const [processingStep, setProcessingStep] = useState(0)
   const [processingElapsed, setProcessingElapsed] = useState(0) // seconds since submit
-  const [error, setError] = useState(null)
 
-  const mountedRef = useRef(true)
-  const processingTimerRef = useRef(null)
-  const elapsedTimerRef = useRef(null)
+  // Keep the processing screen up while the analysis is in flight AND until we
+  // navigate away on success — avoids a flash of the record screen in between.
+  const isProcessing = status === 'submitting' || status === 'success'
 
+  // Cosmetic step + elapsed indicators, scoped to the in-flight submit. setState
+  // happens only inside the timer callbacks (async — never synchronously in the
+  // effect body); the counters are reset in handleStop before submit starts. The
+  // effect cleanup clears both timers when the status leaves 'submitting'.
   useEffect(() => {
-    mountedRef.current = true
-    return () => {
-      mountedRef.current = false
-      clearInterval(processingTimerRef.current)
-      clearInterval(elapsedTimerRef.current)
-    }
-  }, [])
-
-  async function handleStop() {
-    setError(null)
-    setPhase('processing')
-    setProcessingStep(0)
-    setProcessingElapsed(0)
-
-    // Advance the step indicator while we wait for the result.
+    if (status !== 'submitting') return
     let step = 0
-    processingTimerRef.current = setInterval(() => {
+    const stepTimer = setInterval(() => {
       step += 1
       if (step < STEPS.length - 1) setProcessingStep(step)
     }, 800)
-
-    // Elapsed-time counter — reassures the learner the analysis is still working.
-    elapsedTimerRef.current = setInterval(() => {
-      setProcessingElapsed((s) => s + 1)
-    }, 1000)
-
-    const stopTimers = () => {
-      clearInterval(processingTimerRef.current)
-      clearInterval(elapsedTimerRef.current)
+    const elapsedTimer = setInterval(() => setProcessingElapsed((s) => s + 1), 1000)
+    return () => {
+      clearInterval(stepTimer)
+      clearInterval(elapsedTimer)
     }
+  }, [status])
 
+  // On success, hold the processing screen briefly (the "Done" step is shown via
+  // displayStep below), then navigate to results.
+  useEffect(() => {
+    if (status !== 'success' || !result) return
+    const t = setTimeout(
+      () => navigate('/results', { state: { result, passage, isFirstSession } }),
+      400,
+    )
+    return () => clearTimeout(t)
+  }, [status, result, navigate, passage, isFirstSession])
+
+  async function handleStop() {
     const file = await stop()
-    if (!mountedRef.current) return
-    if (!file) {
-      stopTimers()
-      setPhase('ready')
-      return
-    }
-
-    try {
-      // submitRecording (lib/api.js) POSTs the recording to the real FastAPI
-      // /analyze endpoint (REA-28). Timeout handling is owned by RR-050 (REA-34).
-      const result = await submitRecording(file, passage.id)
-      if (!mountedRef.current) return
-      stopTimers()
-      setProcessingStep(STEPS.length - 1)
-      setTimeout(() => {
-        if (mountedRef.current) navigate('/results', { state: { result, passage, isFirstSession } })
-      }, 400)
-    } catch (err) {
-      console.error(err)
-      if (!mountedRef.current) return
-      stopTimers()
-      setPhase('ready')
-      setError('Something went wrong. Please try recording again.')
-    }
+    if (!file) return
+    setProcessingStep(0)
+    setProcessingElapsed(0)
+    submit(file, passage.id)
   }
+
+  function handleStart() {
+    reset() // clear any prior error/timeout before a fresh take
+    start()
+  }
+
+  // Specific, recovery-oriented copy per failure kind (CLAUDE.md error rules) —
+  // never a generic "something went wrong".
+  const errorMessage =
+    status === 'timeout'
+      ? 'This is taking longer than usual. Please check your internet, then tap Start Recording to try again.'
+      : status === 'error'
+        ? "We couldn't check your reading this time. Please tap Start Recording to try again."
+        : null
 
   // --- Permission gate -------------------------------------------------------
   // While probing existing permission (and silently acquiring when pre-granted),
@@ -152,7 +145,9 @@ export default function SessionScreen() {
   }
 
   // --- Processing screen -----------------------------------------------------
-  if (phase === 'processing') {
+  if (isProcessing) {
+    // On success, show every step done (the brief "Done" flash before navigation).
+    const displayStep = status === 'success' ? STEPS.length - 1 : processingStep
     return (
       <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-page font-display">
         <Header />
@@ -181,8 +176,8 @@ className="animate-pulse" aria-hidden="true">
           {/* Step progress — done steps use a checkmark (icon + colour) */}
           <ol className="mt-8 flex w-full items-start justify-between">
             {STEPS.map((label, i) => {
-              const done = i < processingStep
-              const active = i === processingStep
+              const done = i < displayStep
+              const active = i === displayStep
               return (
                 <li key={label} className="flex flex-1 flex-col items-center gap-2">
                   <span
@@ -249,7 +244,7 @@ className="animate-pulse" aria-hidden="true">
           Read this passage aloud, clearly and at your normal pace.
         </p>
 
-        {error && (
+        {errorMessage && (
           <div
             role="alert"
             className="flex items-start gap-3 rounded-[12px] border border-brand/30 bg-brand/5 px-4 py-3"
@@ -260,7 +255,7 @@ className="animate-pulse" aria-hidden="true">
             >
               !
             </span>
-            <p className="text-[14px] leading-[20px] text-ink">{error}</p>
+            <p className="text-[14px] leading-[20px] text-ink">{errorMessage}</p>
           </div>
         )}
 
@@ -294,8 +289,8 @@ text-brand"
         ) : (
           <button
             type="button"
-            onClick={start}
-            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-brand py-4 text-[17px] font-bold text-white 
+            onClick={handleStart}
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-brand py-4 text-[17px] font-bold text-white
 shadow-[0px_4px_0px_#871f1a]"
           >
             <span className="size-3 rounded-full bg-white" aria-hidden="true" />
