@@ -43,62 +43,76 @@ readright-app/
 │   ├── index.css               # Tailwind v4 entry (@import "tailwindcss";) + base resets only
 │   │
 │   ├── lib/
-│   │   └── supabase.js         # Single Supabase client instance (createClient)
+│   │   ├── supabase.js         # Supabase client + saveSessionRecord (INSERT + 3x backoff retry)
+│   │   ├── api.js              # FastAPI /analyze client — pure submitRecording(file, passageId, {signal})
+│   │   ├── philIri.js          # Phil-IRI level / word-recognition mapping (this is the old "readingLevel")
+│   │   └── dashboardStats.js   # Aggregates session history into dashboard chart series
 │   │
-│   ├── pages/                  # One file per route — non-critical routes are lazy loaded
-│   │   ├── LoginPage.jsx
-│   │   ├── SessionScreen.jsx        # GO1 + RecordingGate + ProcessingScreen
-│   │   ├── SessionResultsPage.jsx   # Results display + useSessionStorage
-│   │   └── DashboardPage.jsx        # PersonalProgressDashboard (trend charts + panels)
+│   ├── pages/                  # One file per route — all eagerly imported (no React.lazy yet)
+│   │   ├── LoginPage.jsx            # /login
+│   │   ├── PrePermissionScreen.jsx  # /pre-session — probe grant, stop probe tracks → /quality-check
+│   │   ├── QualityCheckScreen.jsx   # /quality-check — GO1 four-check gate (useQualityGate) → /session
+│   │   ├── SessionScreen.jsx        # /session — permission gate + passage + record/stop + inline processing
+│   │   ├── SessionResultsPage.jsx   # /results — results display + useSessionStorage
+│   │   └── DashboardPage.jsx        # /dashboard — personal progress (trend charts + panels)
 │   │
 │   ├── components/
 │   │   ├── auth/
 │   │   │   └── AuthGuard.jsx           # Redirects unauthenticated users to /login
-│   │   ├── session/
-│   │   │   ├── RecordingGate.jsx       # Record/Stop button, gate logic, ProcessingScreen
-│   │   │   ├── ProcessingScreen.jsx    # Upload→Transcribe→Score→Done steps + timeout
-│   │   │   ├── PassageDisplay.jsx      # Renders assigned passage text (min 18px)
-│   │   │   └── CheckIndicator.jsx      # Reusable PASS/FAIL chip (color + icon + message)
-│   │   ├── quality/
-│   │   │   ├── QualityCheckPanel.jsx   # Renders all four check indicators + camera preview
+│   │   ├── quality/                    # (no QualityCheckPanel — the page composes these directly)
 │   │   │   ├── CameraPreview.jsx       # Live mirrored <video> element (pure stream consumer)
 │   │   │   ├── PermissionExplainer.jsx # In-app camera/mic explanation shown BEFORE native prompt
 │   │   │   └── PermissionDenied.jsx    # Device-specific recovery screen (switches on errorKind + platform)
 │   │   ├── results/
-│   │   │   ├── ScoreSummary.jsx        # WPM, word recognition %, reading level badge
-│   │   │   ├── MiscueBreakdownList.jsx # 7 miscue type counts as bar list
-│   │   │   └── BehavioralChecklist.jsx # 5 Phil-IRI behavioral flags with plain-language text
-│   │   └── dashboard/
-│   │       ├── ReadingLevelTrendChart.jsx  # Recharts step/line chart (Frustration/Instructional/Independent)
-│   │       ├── WPMProgressionChart.jsx     # Recharts line chart + benchmark reference lines
-│   │       ├── MiscueBreakdownChart.jsx    # Recharts bar or pie chart (aggregated across sessions)
-│   │       └── BehavioralHistoryPanel.jsx  # 5 behavior rows with flagged count indicators
+│   │   │   ├── ReadingLevelCard.jsx    # Reading-level badge card
+│   │   │   ├── StatCard.jsx            # WPM / word-recognition stat tile
+│   │   │   ├── MiscueBreakdown.jsx     # Miscue type counts
+│   │   │   ├── ReadingHabits.jsx       # Phil-IRI behavioral flags (habit-improvement framing)
+│   │   │   └── ResultsSkeleton.jsx     # Loading skeleton for the results page
+│   │   ├── dashboard/
+│   │   │   ├── ProfileHeaderCard.jsx        # Learner profile header
+│   │   │   ├── StatsSummaryCard.jsx         # Summary stats card
+│   │   │   ├── ReadingLevelChart.jsx        # Recharts reading-level trend
+│   │   │   ├── WpmChart.jsx                 # Recharts WPM progression + benchmark lines
+│   │   │   ├── MiscueBreakdownChart.jsx     # Recharts miscue breakdown (aggregated)
+│   │   │   ├── BehavioralHistoryTable.jsx   # Behavior rows with flagged-count indicators
+│   │   │   ├── AchievementsSection.jsx      # Achievements / badges
+│   │   │   ├── EmptyState.jsx               # No-sessions-yet state
+│   │   │   ├── ErrorState.jsx               # Fetch-failure state
+│   │   │   └── DashboardSkeleton.jsx        # Loading skeleton for the dashboard
+│   │   ├── layout/
+│   │   │   ├── AppHeader.jsx           # Shared app header
+│   │   │   └── PageShell.jsx           # Page container / layout wrapper
+│   │   ├── ui/                         # Shared primitives:
+│   │   │   └── Avatar.jsx · Badge.jsx · Button.jsx · Card.jsx · Skeleton.jsx
+│   │   └── icons.jsx                   # Shared inline SVG icon components
 │   │
 │   ├── hooks/
-│   │   ├── useNoiseCheck.js        # Web Audio AnalyserNode — ambient noise, 500ms interval
-│   │   ├── useLightingCheck.js     # Canvas API luminance, 500ms interval
-│   │   ├── useCameraCheck.js       # MediaPipe Face Mesh WASM — face centered + angle (forgiving thresholds)
-│   │   ├── useMicCheck.js          # Web Audio AnalyserNode — mic amplitude; latches PASS once clear input is heard
-│   │   ├── useQualityGate.js       # Aggregates 4 check hooks → { allPassed, checks }
+│   │   ├── useNoiseCheck.js        # Web Audio AnalyserNode — ambient noise → { status, message }
+│   │   ├── useLightingCheck.js     # Canvas API luminance → { status, message }
+│   │   ├── useCameraCheck.js       # MediaPipe Face Mesh WASM — face centered + angle → { status, message }
+│   │   ├── useMicCheck.js          # Web Audio amplitude; latches PASS once heard → { status, message }
+│   │   ├── useQualityGate.js       # Aggregates the 4 check hooks → { allPassed, checks }
 │   │   ├── useMediaStream.js       # getUserMedia + permission state + stream lifecycle (ONLY track.stop caller)
 │   │   ├── useMediaRecorder.js     # MediaRecorder + blob only — consumes useMediaStream, never stops tracks
-│   │   ├── useAnalyzeSubmit.js     # fetch POST to FastAPI /analyze, timeout 120s, retry UI
-│   │   ├── useSessionStorage.js    # Supabase INSERT sessions, retry x3 exponential backoff
-│   │   ├── useSessionHistory.js    # Supabase SELECT sessions ORDER BY timestamp ASC
+│   │   ├── useAnalyzeSubmit.js     # FastAPI POST state machine — AbortController, 120s timeout, abort-on-unmount
+│   │   ├── useSessionStorage.js    # Wraps saveSessionRecord — StrictMode once-guard → { saveStatus }
+│   │   ├── useSessionHistory.js    # Supabase SELECT sessions ORDER BY session_timestamp ASC
+│   │   ├── useCurrentUser.js       # Resolves signed-in user → { user, displayName, initial }
 │   │   └── useAuth.js              # Supabase Auth state (session, user, signIn, signOut)
 │   │
 │   ├── context/
 │   │   └── AuthContext.jsx         # Provides auth state via useAuth; wraps entire app
 │   │
 │   ├── data/
-│   │   └── passages.js             # Phil-IRI Grade 4 passage bank (id + text); random assignment logic
+│   │   ├── passages.js             # Phil-IRI English passage bank + getRandomPassage({grade,instrument,...})
+│   │   └── rename_me_review_me.js  # ⚠️ Unused leftover — slated for removal
 │   │
 │   └── utils/
-│       ├── readingLevel.js         # Maps reading_level string → plain-language label + explanation
-│       └── platform.js             # Coarse iOS/Android/other UA detection — selects PermissionDenied recovery copy
+│       └── platform.js             # Coarse iOS/Android/other UA detection — selects PermissionDenied copy
 │
 ├── .env.local                      # Gitignored. VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY,
-│                                   #   VITE_FASTAPI_URL, VITE_FASTAPI_API_KEY
+│                                   #   VITE_FASTAPI_URL, VITE_API_KEY
 ├── index.html
 ├── vite.config.js                  # Vite config — @vitejs/plugin-react + @tailwindcss/vite (no vite-plugin-pwa);
 │                                   #   preview.allowedHosts permits cloudflared/ngrok tunnels for mobile PWA testing
@@ -109,19 +123,21 @@ readright-app/
 
 ## Routing
 
-Defined in `src/App.jsx` using `<BrowserRouter>` + `<Routes>` / `<Route>` (React Router). `BrowserRouter` is mounted in `src/main.jsx`. The `createBrowserRouter` data-router API is not used — the app has four flat routes with no loaders or deferred data, so the simpler component API is sufficient.
+Defined in `src/App.jsx` using `<BrowserRouter>` + `<Routes>` / `<Route>` (React Router). `BrowserRouter` is mounted in `src/main.jsx`. The `createBrowserRouter` data-router API is not used — the app has six flat routes with no loaders or deferred data, so the simpler component API is sufficient.
 
 | Path | Component | Guard |
 |---|---|---|
-| `/login` | `LoginPage` | Redirect to `/session` if already authenticated |
+| `/login` | `LoginPage` | Redirect to `/pre-session` if already authenticated |
+| `/pre-session` | `PrePermissionScreen` | `AuthGuard` — probes for the grant, stops the probe stream, then forwards to `/quality-check` |
+| `/quality-check` | `QualityCheckScreen` | `AuthGuard` — GO1 four-check gate; forwards to `/session` once all pass |
 | `/session` | `SessionScreen` | `AuthGuard` — redirect to `/login` if unauthenticated |
 | `/results` | `SessionResultsPage` | `AuthGuard` — redirect to `/login`; redirect to `/session` if no result state |
 | `/dashboard` | `DashboardPage` | `AuthGuard` — redirect to `/login` |
-| `/` | Redirect → `/login` | — |
+| `/` and `*` | Redirect → `/login` | — |
 
-All non-critical pages (`SessionResultsPage`, `DashboardPage`) are **lazy loaded** with `React.lazy()` + `<Suspense>`. `LoginPage` and `SessionScreen` remain eagerly imported because they are on the critical recording path.
+All pages are **eagerly imported** today — per-route `React.lazy()` + `<Suspense>` splitting is **not yet implemented** (only vendor chunk-splitting is configured in `vite.config.js`). The learner flow runs `/login → /pre-session → /quality-check → /session → /results`, with `/dashboard` reachable from the results page.
 
-Navigation after submission: `RecordingGate` navigates to `/results` using `useNavigate`, passing `assessmentJSON` via React Router `state` (`navigate('/results', { state: { result } })`). `SessionResultsPage` reads it with `useLocation().state.result`.
+Navigation after submission: `SessionScreen` navigates to `/results` using `useNavigate`, passing the result via React Router `state` (`navigate('/results', { state: { result, passage, isFirstSession } })`). `SessionResultsPage` reads it with `useLocation().state` (`result`, `passage`, `isFirstSession`).
 
 ### Planned (stubbed) routes
 
@@ -203,22 +219,18 @@ This single fetch serves both UC-4.3 (Trend Charts) and UC-4.4 (Miscue + Behavio
 
 ### FastAPI AI Microservice
 
-Called exclusively in `useAnalyzeSubmit`:
+The network call is a pure function in `lib/api.js` (`submitRecording(file, passageId, { signal })`); the `useAnalyzeSubmit` hook wraps it with the AbortController, the 120s timeout, abort-on-unmount, and the `idle → submitting → success/error/timeout` state machine. The pure call:
 ```js
 const formData = new FormData()
-formData.append('file', mp4Blob, 'recording.mp4')
+formData.append('file', file)
 formData.append('passage_id', passageId)
-
-const controller = new AbortController()
-const timeoutId = setTimeout(() => controller.abort(), 120_000)
 
 const response = await fetch(`${import.meta.env.VITE_FASTAPI_URL}/analyze`, {
   method: 'POST',
-  headers: { 'X-API-Key': import.meta.env.VITE_FASTAPI_API_KEY },
+  headers: { 'X-API-Key': import.meta.env.VITE_API_KEY },
   body: formData,
-  signal: controller.signal,
+  signal,            // supplied by useAnalyzeSubmit (120s timeout / unmount abort)
 })
-clearTimeout(timeoutId)
 ```
 
 - **Never** send the learner's JWT to FastAPI.
@@ -301,7 +313,7 @@ On failure, the raw `DOMException` never leaves `useMediaStream` — it is mappe
 
 - Hand-rolled Service Worker at `public/sw.js`, registered in `src/main.jsx` after window `load`. No build-tool PWA plugin is used; `vite-plugin-pwa` is intentionally avoided because its default precaching behavior conflicts with the SRS requirement that there be **no offline caching**.
 - Service Worker purpose: **home screen installation only**. The `fetch` handler is a passthrough to the network. No caches are populated. No background sync. No push notifications.
-- `public/manifest.json` is referenced from `index.html` via `<link rel="manifest">`. It must include: `name`, `short_name`, `display: "standalone"`, `start_url`, `background_color`, `theme_color`, and at least two icon sizes (192px, 512px). Icon files live under `public/icons/` and are referenced with absolute paths (e.g. `/icons/icon-192.png`).
+- `public/manifest.json` is referenced from `index.html` via `<link rel="manifest">`. It must include: `name`, `short_name`, `display: "standalone"`, `start_url`, `background_color`, `theme_color`, and at least two icon sizes (192px, 512px). Icon files live at the `public/` root and are referenced with absolute paths (e.g. `/icon-192.png`, `/icon-512.png` — there is **no** `icons/` subfolder). Note: the manifest's `theme_color` is currently `#1D4ED8` (blue), which does **not** match the brand red (`--color-brand` `#a5352d`) — reconcile if brand consistency is required.
 - PWA requires HTTPS at all times. `getUserMedia`, Service Worker registration, and JWT security all depend on a secure origin.
 
 ---
