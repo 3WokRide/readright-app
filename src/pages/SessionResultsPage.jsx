@@ -73,7 +73,7 @@ export default function SessionResultsPage() {
   const { saveStatus } = useSessionStorage(result, passageId)
 
   return (
-    <PageShell>
+    <PageShell onExit={() => navigate('/dashboard')}>
 
       {!loading && result && state?.isFirstSession && (
         <div style={{ background: '#FEF9F0', border: '1px solid #F0DFC0', borderRadius: 12, padding: '14px 16px', marginBottom: 8, fontFamily: 'system-ui, sans-serif' }}>

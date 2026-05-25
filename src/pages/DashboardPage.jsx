@@ -49,6 +49,7 @@
  *  ✦ Page loads within 5 s on simulated 4G (SRS NFR-P3)
  *  ✦ Visual matches Figma "My Profile (English)"
  */
+import { useNavigate } from 'react-router-dom'
 import { useSessionHistory } from '../hooks/useSessionHistory'
 import { levelToNum } from '../lib/philIri'
 import PageShell from '../components/layout/PageShell'
@@ -65,6 +66,11 @@ import ErrorState from '../components/dashboard/ErrorState'
 
 export default function DashboardPage() {
   const { sessions, loading, error } = useSessionHistory()
+  const navigate = useNavigate()
+  // Entry point into a new reading: routes through the GO1 gate (/quality-check),
+  // which auto-acquires the camera when already permitted and then flows to
+  // /session. Keeps the dashboard a hub instead of a dead end.
+  const startReading = () => navigate('/quality-check')
 
   const levelData = sessions.map((s, i) => ({
     label: `S${i + 1}`,
@@ -93,7 +99,7 @@ export default function DashboardPage() {
 
       {!error && loading && <DashboardSkeleton />}
 
-      {!error && !loading && sessions.length === 0 && <EmptyState />}
+      {!error && !loading && sessions.length === 0 && <EmptyState onStart={startReading} />}
 
       {!error && !loading && sessions.length > 0 && (
         <>
@@ -104,6 +110,21 @@ export default function DashboardPage() {
           <WpmChart data={wpmData} latestWpm={latestWpm} improvement={improvement} />
           <MiscueBreakdownChart sessions={sessions} />
           <BehavioralHistoryTable sessions={sessions} />
+
+          {/* Fixed primary action so a new reading is always one tap away,
+              without scrolling past every chart. PageShell's pb-24 clears it. */}
+          <div className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-[480px] bg-gradient-to-t from-page via-page to-transparent px-5 pb-5 pt-8">
+            <button
+              type="button"
+              onClick={startReading}
+              className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-brand py-4 text-[17px] font-extrabold text-white shadow-[0px_4px_0px_#871f1a]"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              Start New Reading
+            </button>
+          </div>
         </>
       )}
     </PageShell>

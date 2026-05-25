@@ -3,12 +3,19 @@
  * Keeps page/section markup readable and icons reusable across the app.
  */
 
-export function LogoMark() {
+// Brand mark — white open-book glyph on a brand-red rounded square. Matches the
+// Figma header logo; used app-wide (AppHeader + the session/quality headers).
+export function LogoMark({ size = 32 }) {
   return (
-    <svg width="30" height="28" viewBox="0 0 30 28" fill="none">
-      <rect width="30" height="28" rx="4" fill="var(--color-brand)" />
-      <text x="5" y="20" fontSize="16" fontWeight="800" fill="white" fontFamily="sans-serif">R</text>
-    </svg>
+    <span
+      className="flex shrink-0 items-center justify-center rounded-[8px] bg-brand"
+      style={{ width: size, height: size }}
+    >
+      <svg width={size * 0.6} height={size * 0.6} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M3 5h6a3 3 0 0 1 3 3v11a2.5 2.5 0 0 0-2.5-2.5H3z" />
+        <path d="M21 5h-6a3 3 0 0 0-3 3v11a2.5 2.5 0 0 1 2.5-2.5H21z" />
+      </svg>
+    </span>
   )
 }
 
